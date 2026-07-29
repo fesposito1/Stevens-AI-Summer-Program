@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sports Stats Search</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header>
+    <h1>Sports Stats Search</h1>
+    <p class="subtitle">Search any team or player across soccer, basketball, football, hockey, baseball, golf, tennis, and more.</p>
+    <form id="search-form">
+      <input type="text" id="search-input" placeholder="e.g. Arsenal, Lakers, Messi, Tiger Woods" autocomplete="off" />
+      <button type="submit">Search</button>
+    </form>
+  </header>
+
+  <main>
+    <div id="message" class="message hidden"></div>
+    <ul id="results" class="results hidden"></ul>
+    <section id="detail" class="detail hidden"></section>
+  </main>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
