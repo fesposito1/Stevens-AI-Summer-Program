@@ -48,7 +48,10 @@ def sportsdb_get(endpoint, params=None):
     if response.status_code == 429:
         raise RateLimitError("TheSportsDB rate limit reached, try again shortly.")
     response.raise_for_status()
-    data = response.json()
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
 
     with _cache_lock:
         _cache[cache_key] = (time.time(), data)
