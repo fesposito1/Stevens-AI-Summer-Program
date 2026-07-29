@@ -254,3 +254,80 @@ th {
   font-size: 0.85rem;
   font-style: italic;
 }
+
+.compare-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.9rem;
+  margin-bottom: 1.1rem;
+}
+
+.compare-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.compare-form input {
+  width: 120px;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.compare-form input:focus {
+  outline: 2px solid var(--accent);
+}
+
+.compare-row {
+  margin-bottom: 1.2rem;
+}
+
+.compare-row:last-child {
+  margin-bottom: 0;
+}
+
+.compare-label {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.4rem;
+}
+
+.compare-diff {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.compare-bar-track {
+  height: 14px;
+  border-radius: 7px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.compare-bar-fill {
+  height: 100%;
+}
+
+.compare-bar-fill.you {
+  background: var(--accent);
+}
+
+.compare-bar-fill.athlete {
+  background: #f5a623;
+}
+
+.compare-bar-caption {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0.2rem 0 0.6rem;
+}

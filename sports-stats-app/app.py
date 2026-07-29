@@ -1,12 +1,26 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from threading import Lock
+from threading import Lock, Timer
+import os
+import re
+import sys
 import time
+import webbrowser
 
 import requests
 from flask import Flask, jsonify, render_template, request
 
-app = Flask(__name__)
+
+def resource_path(relative_path):
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative_path)
+
+
+app = Flask(
+    __name__,
+    template_folder=resource_path("templates"),
+    static_folder=resource_path("static"),
+)
 
 API_KEY = "123"
 BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
@@ -62,6 +76,46 @@ def fetch_all(calls):
 def season_candidates():
     year = datetime.now().year
     return [f"{year - 1}-{year}", f"{year}-{year + 1}", str(year), str(year - 1)]
+
+
+def parse_height_cm(raw):
+    if not raw:
+        return None
+    match = re.search(r"(\d+\.\d+)\s*m\b", raw, re.IGNORECASE)
+    if match:
+        return round(float(match.group(1)) * 100, 1)
+    match = re.search(r"(\d+)\s*cm", raw, re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    match = re.search(r"(\d+)\s*(?:ft|')\s*(\d+)?\s*(?:in|\")?", raw, re.IGNORECASE)
+    if match:
+        feet = float(match.group(1))
+        inches = float(match.group(2)) if match.group(2) else 0.0
+        return round(feet * 30.48 + inches * 2.54, 1)
+    return None
+
+
+def parse_weight_kg(raw):
+    if not raw:
+        return None
+    match = re.search(r"(\d+\.?\d*)\s*kg", raw, re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    match = re.search(r"(\d+\.?\d*)\s*lbs?\b", raw, re.IGNORECASE)
+    if match:
+        return round(float(match.group(1)) / 2.20462, 1)
+    return None
+
+
+def calc_age(date_born):
+    if not date_born:
+        return None
+    try:
+        born = datetime.strptime(date_born, "%Y-%m-%d")
+    except ValueError:
+        return None
+    today = datetime.now()
+    return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
 
 def team_summary(team):
@@ -241,6 +295,9 @@ def player_detail(player_id):
             "status": info.get("strStatus"),
             "height": info.get("strHeight"),
             "weight": info.get("strWeight"),
+            "height_cm": parse_height_cm(info.get("strHeight")),
+            "weight_kg": parse_weight_kg(info.get("strWeight")),
+            "age": calc_age(info.get("dateBorn")),
             "description": info.get("strDescriptionEN"),
             "thumb": info.get("strThumb") or info.get("strCutout"),
             "banner": info.get("strBanner"),
@@ -272,4 +329,6 @@ def player_detail(player_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    PORT = 5000
+    Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
+    app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False)

@@ -215,6 +215,29 @@ function renderTeamDetail(data) {
   attachBack();
 }
 
+function compareRow(label, youVal, athleteVal, unit, athleteName) {
+  if (youVal === null || youVal === undefined || isNaN(youVal)) {
+    return `<div class="compare-row"><div class="compare-label">${label}</div><p class="empty-note">Enter a value above and click Compare.</p></div>`;
+  }
+  if (athleteVal === null || athleteVal === undefined || isNaN(athleteVal)) {
+    return `<div class="compare-row"><div class="compare-label">${label}</div><p class="empty-note">You: ${youVal}${unit} · ${athleteName}'s ${label.toLowerCase()} isn't available from the API.</p></div>`;
+  }
+
+  const max = Math.max(youVal, athleteVal, 1);
+  const diff = youVal - athleteVal;
+  const diffText = diff === 0 ? "tied" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}${unit} vs ${athleteName}`;
+
+  return `
+    <div class="compare-row">
+      <div class="compare-label">${label} <span class="compare-diff">${diffText}</span></div>
+      <div class="compare-bar-track"><div class="compare-bar-fill you" style="width:${(youVal / max * 100).toFixed(1)}%"></div></div>
+      <div class="compare-bar-caption">You: ${youVal}${unit}</div>
+      <div class="compare-bar-track"><div class="compare-bar-fill athlete" style="width:${(athleteVal / max * 100).toFixed(1)}%"></div></div>
+      <div class="compare-bar-caption">${athleteName}: ${athleteVal}${unit}</div>
+    </div>
+  `;
+}
+
 function renderPlayerDetail(data) {
   const { info, last_events, next_events } = data;
 
@@ -240,6 +263,17 @@ function renderPlayerDetail(data) {
     </div>
 
     <div class="category">
+      <h3>Compare Your Stats</h3>
+      <div class="compare-form">
+        <label>Height (cm)<input type="number" id="cmp-height" placeholder="e.g. 180" /></label>
+        <label>Weight (kg)<input type="number" id="cmp-weight" placeholder="e.g. 75" /></label>
+        <label>Age (years)<input type="number" id="cmp-age" placeholder="e.g. 25" /></label>
+        <button type="button" id="cmp-btn">Compare</button>
+      </div>
+      <div id="cmp-result"></div>
+    </div>
+
+    <div class="category">
       <h3>Team's Recent Results</h3>
       ${eventsTable(last_events, true)}
     </div>
@@ -251,4 +285,18 @@ function renderPlayerDetail(data) {
   `;
   detailEl.classList.remove("hidden");
   attachBack();
+
+  document.getElementById("cmp-btn").addEventListener("click", () => {
+    const you = {
+      height: parseFloat(document.getElementById("cmp-height").value),
+      weight: parseFloat(document.getElementById("cmp-weight").value),
+      age: parseFloat(document.getElementById("cmp-age").value),
+    };
+    const rows = [
+      compareRow("Height", you.height, info.height_cm, " cm", info.name),
+      compareRow("Weight", you.weight, info.weight_kg, " kg", info.name),
+      compareRow("Age", you.age, info.age, " yrs", info.name),
+    ].join("");
+    document.getElementById("cmp-result").innerHTML = rows;
+  });
 }
