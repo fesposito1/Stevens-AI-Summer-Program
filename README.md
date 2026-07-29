@@ -1,1 +1,1 @@
-# Stevens-AI-Summer-Program hey
+# Stevens-AI-Summer-Program
