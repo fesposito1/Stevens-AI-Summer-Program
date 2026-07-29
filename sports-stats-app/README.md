@@ -1,38 +1,63 @@
 # Sports Stats Search
 
-Flask app with a search bar to look up teams and players across sports (soccer, basketball,
-football, hockey, baseball, golf, tennis, and more) using TheSportsDB free API.
+Desktop app (Flask + a native window via pywebview) to look up teams and players across sports
+(soccer, basketball, football, hockey, baseball, golf, tennis, and more) using TheSportsDB free
+API, plus your own account for logging sport-specific personal stats, comparing yourself to pro
+athletes, a leaderboard against other users, and simple trend projections.
 
-## Run it
+## Just want to run it?
+
+Double-click `dist/SportsStatsApp.exe` — no Python install required. It opens as its own
+desktop window (not a browser tab). Create an account on first launch.
+
+## Run from source
 
 ```
 pip install -r requirements.txt
 python app.py
 ```
 
-Then open http://127.0.0.1:5000
+This also opens a native window automatically (via pywebview), not a browser tab.
 
-## Build a standalone .exe
+## Build the standalone .exe yourself
 
 ```
 pip install pyinstaller
 pyinstaller --onefile --name SportsStatsApp --add-data "templates;templates" --add-data "static;static" app.py
 ```
 
-The exe is written to `dist/SportsStatsApp.exe`. Double-click it — it starts the server and
-opens your browser to the app automatically. No Python install needed on the machine running it.
+The exe is written to `dist/SportsStatsApp.exe`.
 
 ## Features
 
-- Search any team or player across sports.
-- Team pages show overview, roster, recent results, upcoming fixtures, and league standings.
-- Player pages show overview plus a "Compare Your Stats" tool — enter your own height/weight/age
-  and see a side-by-side bar comparison against the selected athlete.
+- **Login / Sign up** — accounts are local to your machine (SQLite), passwords hashed with
+  werkzeug's `generate_password_hash`.
+- **Your Stats** — log sport-specific metrics over time (mile time, 40-yard dash, vertical jump,
+  bench press, batting average, driving distance, etc. — see `metrics.py` for the full catalog
+  per sport) and view your history.
+- **Player Stats** — search any team or player; team pages show overview, roster, recent
+  results, upcoming fixtures, and league standings; player pages show bio info.
+- **Compare** — search an athlete and compare your saved height/weight/age against theirs with a
+  bar chart (prefilled from your last saved Bio stats in Your Stats).
+- **Leaderboard** — for any sport + metric that at least one user has logged, ranks all users by
+  their latest value (lower-is-better metrics like times rank ascending, higher-is-better metrics
+  like bench press rank descending).
+- **Projections** — pick a metric you've logged at least twice (spanning at least a day), and see
+  a simple linear-trend projection for 30/90/365 days out, with a small sparkline of your history.
+
+## Data & storage
+
+- User accounts and stat logs are stored in a local SQLite database at
+  `%LOCALAPPDATA%\SportsStatsApp\data.db` (not in this repo, not synced anywhere).
+- The session signing key is stored alongside it at `%LOCALAPPDATA%\SportsStatsApp\secret.key`.
 
 ## Notes
 
 - Uses TheSportsDB's free test API key (`123`), rate-limited to 30 requests/minute.
-- Responses are cached in-memory for 5 minutes to stay under the rate limit.
-- Free tier covers team/player bios, rosters, schedules, results, and league standings.
-  It does not include deep box-score stats (points per game, etc.) — that requires
-  TheSportsDB's paid tier.
+- Responses from TheSportsDB are cached in-memory for 5 minutes to stay under the rate limit.
+- TheSportsDB's free tier covers team/player bios, rosters, schedules, results, and league
+  standings — it does not include deep box-score stats (points per game, etc.). That's why
+  personal performance metrics (mile time, vertical jump, etc.) are self-logged by users rather
+  than pulled from the API.
+- Projections are a simple linear regression over your own logged history — a fun estimate, not
+  a scientific prediction.

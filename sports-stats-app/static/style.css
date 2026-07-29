@@ -49,12 +49,13 @@ h1 {
   font-size: 0.95rem;
 }
 
-#search-form {
+.search-form {
   display: flex;
   gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
-#search-input {
+.search-form input {
   flex: 1;
   padding: 0.7rem 1rem;
   border-radius: 8px;
@@ -64,7 +65,7 @@ h1 {
   font-size: 1rem;
 }
 
-#search-input:focus {
+.search-form input:focus {
   outline: 2px solid var(--accent);
 }
 
@@ -330,4 +331,174 @@ th {
   font-size: 0.78rem;
   color: var(--muted);
   margin: 0.2rem 0 0.6rem;
+}
+
+/* ---------- Auth screen ---------- */
+
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.auth-box {
+  width: 100%;
+  max-width: 360px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  padding: 1.8rem;
+  text-align: center;
+}
+
+.auth-box h1 {
+  font-size: 1.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1.2rem;
+}
+
+.auth-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.auth-tab-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.auth-form input {
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.auth-form input:focus {
+  outline: 2px solid var(--accent);
+}
+
+/* ---------- App shell ---------- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 1rem;
+  text-align: left;
+}
+
+.app-header h1 {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.header-right button {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.tab-nav {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-btn {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+.tab-btn.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.tab-panel {
+  display: none;
+  padding-top: 1.2rem;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+/* ---------- Stat logging form ---------- */
+
+.stat-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.9rem;
+  margin-bottom: 0.6rem;
+}
+
+.stat-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.stat-form select,
+.stat-form input {
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.95rem;
+  min-width: 140px;
+}
+
+/* ---------- Leaderboard ---------- */
+
+.highlight-row td {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  font-weight: 600;
+}
+
+/* ---------- Sparkline ---------- */
+
+.sparkline {
+  display: block;
+  margin: 0.6rem 0 1rem;
 }

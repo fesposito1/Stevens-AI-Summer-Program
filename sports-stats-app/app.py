@@ -1,14 +1,20 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from threading import Lock, Timer
+from functools import wraps
+from threading import Lock, Thread
+import logging
 import os
 import re
 import sys
 import time
-import webbrowser
 
 import requests
-from flask import Flask, jsonify, render_template, request
+import webview
+from flask import Flask, jsonify, render_template, request, session
+from werkzeug.security import check_password_hash, generate_password_hash
+
+import db
+from metrics import SPORT_METRICS, metric_lookup
 
 
 def resource_path(relative_path):
@@ -16,11 +22,25 @@ def resource_path(relative_path):
     return os.path.join(base, relative_path)
 
 
+def load_or_create_secret_key():
+    path = os.path.join(db.data_dir(), "secret.key")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return f.read()
+    key = os.urandom(32)
+    with open(path, "wb") as f:
+        f.write(key)
+    return key
+
+
 app = Flask(
     __name__,
     template_folder=resource_path("templates"),
     static_folder=resource_path("static"),
 )
+app.secret_key = load_or_create_secret_key()
+app.config["SESSION_COOKIE_NAME"] = "sportsstats_session"
+db.init_db()
 
 API_KEY = "123"
 BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"
@@ -33,6 +53,15 @@ CACHE_TTL_SECONDS = 300
 
 class RateLimitError(Exception):
     pass
+
+
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if "user_id" not in session:
+            return jsonify({"error": "Login required"}), 401
+        return f(*args, **kwargs)
+    return wrapper
 
 
 def sportsdb_get(endpoint, params=None):
@@ -118,6 +147,22 @@ def calc_age(date_born):
     return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
 
+def linear_regression(points):
+    n = len(points)
+    if n < 2:
+        return None
+    sum_x = sum(p[0] for p in points)
+    sum_y = sum(p[1] for p in points)
+    sum_xy = sum(p[0] * p[1] for p in points)
+    sum_x2 = sum(p[0] ** 2 for p in points)
+    denom = n * sum_x2 - sum_x ** 2
+    if denom == 0:
+        return None
+    slope = (n * sum_xy - sum_x * sum_y) / denom
+    intercept = (sum_y - slope * sum_x) / n
+    return slope, intercept
+
+
 def team_summary(team):
     return {
         "type": "team",
@@ -145,24 +190,184 @@ def index():
     return render_template("index.html")
 
 
+# ---------- Auth ----------
+
+@app.route("/api/auth/signup", methods=["POST"])
+def signup():
+    payload = request.get_json(silent=True) or {}
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+
+    if len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters."}), 400
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters."}), 400
+    if db.get_user_by_username(username):
+        return jsonify({"error": "That username is already taken."}), 409
+
+    user_id = db.create_user(username, generate_password_hash(password), datetime.now().isoformat())
+    session.permanent = True
+    session["user_id"] = user_id
+    session["username"] = username
+    return jsonify({"username": username})
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    payload = request.get_json(silent=True) or {}
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+
+    user = db.get_user_by_username(username)
+    if not user or not check_password_hash(user["password_hash"], password):
+        return jsonify({"error": "Invalid username or password."}), 401
+
+    session.permanent = True
+    session["user_id"] = user["id"]
+    session["username"] = user["username"]
+    return jsonify({"username": user["username"]})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/me")
+def auth_me():
+    if "user_id" not in session:
+        return jsonify({"username": None})
+    return jsonify({"username": session.get("username")})
+
+
+# ---------- Metrics catalog ----------
+
+@app.route("/api/metrics/catalog")
+def metrics_catalog():
+    return jsonify({"sports": SPORT_METRICS})
+
+
+# ---------- Stats logging ----------
+
+@app.route("/api/stats", methods=["POST"])
+@login_required
+def log_stat():
+    payload = request.get_json(silent=True) or {}
+    sport = payload.get("sport")
+    metric_key = payload.get("metric_key")
+    value = payload.get("value")
+
+    metric = metric_lookup(sport, metric_key)
+    if not metric:
+        return jsonify({"error": "Unknown sport/metric combination."}), 400
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Value must be a number."}), 400
+
+    db.add_stat_log(
+        session["user_id"], sport, metric_key, metric["label"], metric["unit"], metric["direction"],
+        value, datetime.now().isoformat(),
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/stats/me")
+@login_required
+def stats_me():
+    return jsonify({"stats": db.get_stats_for_user(session["user_id"])})
+
+
+# ---------- Leaderboard ----------
+
+@app.route("/api/leaderboard/options")
+@login_required
+def leaderboard_options():
+    return jsonify({"options": db.get_leaderboard_options()})
+
+
+@app.route("/api/leaderboard")
+@login_required
+def leaderboard():
+    sport = request.args.get("sport")
+    metric_key = request.args.get("metric_key")
+    if not sport or not metric_key:
+        return jsonify({"error": "sport and metric_key are required."}), 400
+    return jsonify({"entries": db.get_leaderboard(sport, metric_key)})
+
+
+# ---------- Projections ----------
+
+@app.route("/api/projections/me")
+@login_required
+def projections_me():
+    metric_key = request.args.get("metric_key")
+    if not metric_key:
+        return jsonify({"error": "metric_key is required."}), 400
+
+    rows = db.get_stats_for_user(session["user_id"], metric_key=metric_key)
+    if len(rows) < 2:
+        return jsonify({"error": "Log at least 2 entries for this metric to see a projection."}), 400
+
+    first_ts = datetime.fromisoformat(rows[0]["recorded_at"])
+    points = []
+    for row in rows:
+        ts = datetime.fromisoformat(row["recorded_at"])
+        days = (ts - first_ts).total_seconds() / 86400
+        points.append((days, row["value"]))
+
+    last_day = points[-1][0]
+    if last_day < 1:
+        return jsonify({"error": "Your logged entries are too close together in time to project a reliable trend — log entries on different days."}), 400
+
+    reg = linear_regression(points)
+    if not reg:
+        return jsonify({"error": "Not enough variation in your logged values to project a trend."}), 400
+    slope, intercept = reg
+
+    projections = []
+    for offset in (30, 90, 365):
+        proj_day = last_day + offset
+        projections.append({"days_from_now": offset, "value": round(slope * proj_day + intercept, 2)})
+
+    return jsonify({
+        "metric": {
+            "key": metric_key,
+            "label": rows[0]["label"],
+            "unit": rows[0]["unit"],
+            "direction": rows[0]["direction"],
+        },
+        "history": [{"date": r["recorded_at"], "value": r["value"]} for r in rows],
+        "trend_per_day": round(slope, 5),
+        "projections": projections,
+    })
+
+
+# ---------- TheSportsDB lookups ----------
+
 @app.route("/api/search")
 def search():
     query = request.args.get("q", "").strip()
+    only_type = request.args.get("type")
     if not query:
         return jsonify({"results": []})
 
+    calls = {}
+    if only_type != "player":
+        calls["teams"] = ("searchteams.php", {"t": query})
+    if only_type != "team":
+        calls["players"] = ("searchplayers.php", {"p": query})
+
     try:
-        data = fetch_all({
-            "teams": ("searchteams.php", {"t": query}),
-            "players": ("searchplayers.php", {"p": query}),
-        })
+        data = fetch_all(calls)
     except RateLimitError as exc:
         return jsonify({"error": str(exc)}), 429
 
     results = []
-    for team in (data["teams"] or {}).get("teams") or []:
+    for team in (data.get("teams") or {}).get("teams") or []:
         results.append(team_summary(team))
-    for player in (data["players"] or {}).get("player") or []:
+    for player in (data.get("players") or {}).get("player") or []:
         results.append(player_summary(player))
 
     return jsonify({"results": results})
@@ -330,5 +535,19 @@ def player_detail(player_id):
 
 if __name__ == "__main__":
     PORT = 5000
-    Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
-    app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False)
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
+    server_thread = Thread(
+        target=lambda: app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False),
+        daemon=True,
+    )
+    server_thread.start()
+
+    webview.create_window(
+        "Sports Stats Search",
+        f"http://127.0.0.1:{PORT}",
+        width=1100,
+        height=780,
+        min_size=(700, 500),
+    )
+    webview.start()

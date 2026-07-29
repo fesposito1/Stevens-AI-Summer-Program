@@ -1,111 +1,133 @@
-const searchForm = document.getElementById("search-form");
-const searchInput = document.getElementById("search-input");
-const resultsEl = document.getElementById("results");
-const detailEl = document.getElementById("detail");
-const messageEl = document.getElementById("message");
+let metricsCatalog = {};
+let currentUsername = null;
 
-function showMessage(text) {
-  messageEl.textContent = text;
-  messageEl.classList.toggle("hidden", !text);
+window.addEventListener("DOMContentLoaded", init);
+
+async function init() {
+  await loadMetricsCatalog();
+  setupAuthUI();
+  setupTabUI();
+  await checkAuth();
 }
 
-function clear(el) {
-  el.innerHTML = "";
-  el.classList.add("hidden");
+async function loadMetricsCatalog() {
+  const res = await fetch("/api/metrics/catalog");
+  const data = await res.json();
+  metricsCatalog = data.sports || {};
 }
 
-function placeholderImg(src) {
-  return src || "";
-}
-
-searchForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const query = searchInput.value.trim();
-  if (!query) return;
-
-  clear(detailEl);
-  clear(resultsEl);
-  showMessage("Searching...");
-
-  try {
-    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-    const data = await response.json();
-
-    if (response.status === 429) {
-      showMessage(data.error || "Rate limit reached, please wait a moment and try again.");
-      return;
-    }
-
-    if (!data.results || data.results.length === 0) {
-      showMessage(`No teams or players found for "${query}".`);
-      return;
-    }
-
-    showMessage("");
-    renderResults(data.results);
-  } catch (err) {
-    showMessage("Something went wrong reaching the server.");
-  }
-});
-
-function renderResults(results) {
-  resultsEl.innerHTML = "";
-  resultsEl.classList.remove("hidden");
-
-  for (const item of results) {
-    const li = document.createElement("li");
-    li.className = "result-card";
-    li.innerHTML = `
-      ${item.thumb ? `<img src="${item.thumb}" alt="${item.name}" />` : ""}
-      <div>
-        <div class="result-name">
-          <span class="badge">${item.type}</span>${item.name}
-        </div>
-        <div class="result-meta">${item.sport || ""}${item.league ? " · " + item.league : ""}${item.team ? " · " + item.team : ""}</div>
-      </div>
-    `;
-    li.addEventListener("click", () => openDetail(item));
-    resultsEl.appendChild(li);
+async function checkAuth() {
+  const res = await fetch("/api/auth/me");
+  const data = await res.json();
+  if (data.username) {
+    showApp(data.username);
+  } else {
+    showAuthScreen();
   }
 }
 
-async function openDetail(item) {
-  clear(resultsEl);
-  showMessage("Loading details...");
+// ---------- Auth screen ----------
 
-  try {
-    const response = await fetch(`/api/${item.type}/${item.id}`);
-    const data = await response.json();
-
-    if (response.status === 429) {
-      showMessage(data.error || "Rate limit reached, please wait a moment and try again.");
-      return;
-    }
-    if (response.status === 404) {
-      showMessage(data.error || "Not found.");
-      return;
-    }
-
-    showMessage("");
-    if (item.type === "team") {
-      renderTeamDetail(data);
-    } else {
-      renderPlayerDetail(data);
-    }
-  } catch (err) {
-    showMessage("Something went wrong reaching the server.");
-  }
-}
-
-function backLink() {
-  return `<div class="back-link" id="back-link">&larr; Back to results</div>`;
-}
-
-function attachBack() {
-  document.getElementById("back-link").addEventListener("click", () => {
-    clear(detailEl);
-    resultsEl.classList.remove("hidden");
+function setupAuthUI() {
+  document.querySelectorAll(".auth-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      const target = btn.dataset.authTab;
+      document.getElementById("login-form").classList.toggle("hidden", target !== "login");
+      document.getElementById("signup-form").classList.toggle("hidden", target !== "signup");
+      showAuthMessage("");
+    });
   });
+
+  document.getElementById("login-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("login-username").value.trim();
+    const password = document.getElementById("login-password").value;
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAuthMessage(data.error || "Login failed.");
+      return;
+    }
+    showApp(data.username);
+  });
+
+  document.getElementById("signup-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("signup-username").value.trim();
+    const password = document.getElementById("signup-password").value;
+    const res = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAuthMessage(data.error || "Sign up failed.");
+      return;
+    }
+    showApp(data.username);
+  });
+
+  document.getElementById("logout-btn").addEventListener("click", async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    currentUsername = null;
+    ["tab-your-stats", "tab-player-stats", "tab-compare", "tab-leaderboard", "tab-projections"].forEach((id) => {
+      const el = document.getElementById(id);
+      el.innerHTML = "";
+      delete el.dataset.initialized;
+    });
+    showAuthScreen();
+  });
+}
+
+function showAuthMessage(text) {
+  const el = document.getElementById("auth-message");
+  el.textContent = text;
+  el.classList.toggle("hidden", !text);
+}
+
+function showApp(username) {
+  currentUsername = username;
+  document.getElementById("auth-screen").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("current-username").textContent = username;
+  activateTab("your-stats");
+}
+
+function showAuthScreen() {
+  document.getElementById("app").classList.add("hidden");
+  document.getElementById("auth-screen").classList.remove("hidden");
+}
+
+// ---------- Tab navigation ----------
+
+function setupTabUI() {
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+  });
+}
+
+function activateTab(tab) {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
+
+  if (tab === "your-stats") renderYourStats();
+  if (tab === "player-stats") renderPlayerStatsPanel();
+  if (tab === "compare") renderComparePanel();
+  if (tab === "leaderboard") renderLeaderboardPanel();
+  if (tab === "projections") renderProjectionsPanel();
+}
+
+// ---------- Shared detail-rendering helpers ----------
+
+function backLinkHtml() {
+  return `<div class="back-link" id="back-link">&larr; Back to results</div>`;
 }
 
 function eventsTable(events, showScore) {
@@ -138,7 +160,30 @@ function eventsTable(events, showScore) {
   `;
 }
 
-function renderTeamDetail(data) {
+function compareRow(label, youVal, athleteVal, unit, athleteName) {
+  if (youVal === null || youVal === undefined || isNaN(youVal)) {
+    return `<div class="compare-row"><div class="compare-label">${label}</div><p class="empty-note">Enter a value above and click Compare.</p></div>`;
+  }
+  if (athleteVal === null || athleteVal === undefined || isNaN(athleteVal)) {
+    return `<div class="compare-row"><div class="compare-label">${label}</div><p class="empty-note">You: ${youVal}${unit} · ${athleteName}'s ${label.toLowerCase()} isn't available from the API.</p></div>`;
+  }
+
+  const max = Math.max(youVal, athleteVal, 1);
+  const diff = youVal - athleteVal;
+  const diffText = diff === 0 ? "tied" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}${unit} vs ${athleteName}`;
+
+  return `
+    <div class="compare-row">
+      <div class="compare-label">${label} <span class="compare-diff">${diffText}</span></div>
+      <div class="compare-bar-track"><div class="compare-bar-fill you" style="width:${(youVal / max * 100).toFixed(1)}%"></div></div>
+      <div class="compare-bar-caption">You: ${youVal}${unit}</div>
+      <div class="compare-bar-track"><div class="compare-bar-fill athlete" style="width:${(athleteVal / max * 100).toFixed(1)}%"></div></div>
+      <div class="compare-bar-caption">${athleteName}: ${athleteVal}${unit}</div>
+    </div>
+  `;
+}
+
+function renderTeamDetailInto(container, data) {
   const { info, roster, last_events, next_events, table } = data;
 
   const rosterHtml =
@@ -174,8 +219,8 @@ function renderTeamDetail(data) {
         </table>`
       : `<p class="empty-note">No standings available for this team/league.</p>`;
 
-  detailEl.innerHTML = `
-    ${backLink()}
+  container.innerHTML = `
+    ${backLinkHtml()}
     <div class="detail-header">
       ${info.badge ? `<img src="${info.badge}" alt="${info.name}" />` : ""}
       <div>
@@ -211,38 +256,13 @@ function renderTeamDetail(data) {
       ${tableHtml}
     </div>
   `;
-  detailEl.classList.remove("hidden");
-  attachBack();
 }
 
-function compareRow(label, youVal, athleteVal, unit, athleteName) {
-  if (youVal === null || youVal === undefined || isNaN(youVal)) {
-    return `<div class="compare-row"><div class="compare-label">${label}</div><p class="empty-note">Enter a value above and click Compare.</p></div>`;
-  }
-  if (athleteVal === null || athleteVal === undefined || isNaN(athleteVal)) {
-    return `<div class="compare-row"><div class="compare-label">${label}</div><p class="empty-note">You: ${youVal}${unit} · ${athleteName}'s ${label.toLowerCase()} isn't available from the API.</p></div>`;
-  }
-
-  const max = Math.max(youVal, athleteVal, 1);
-  const diff = youVal - athleteVal;
-  const diffText = diff === 0 ? "tied" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}${unit} vs ${athleteName}`;
-
-  return `
-    <div class="compare-row">
-      <div class="compare-label">${label} <span class="compare-diff">${diffText}</span></div>
-      <div class="compare-bar-track"><div class="compare-bar-fill you" style="width:${(youVal / max * 100).toFixed(1)}%"></div></div>
-      <div class="compare-bar-caption">You: ${youVal}${unit}</div>
-      <div class="compare-bar-track"><div class="compare-bar-fill athlete" style="width:${(athleteVal / max * 100).toFixed(1)}%"></div></div>
-      <div class="compare-bar-caption">${athleteName}: ${athleteVal}${unit}</div>
-    </div>
-  `;
-}
-
-function renderPlayerDetail(data) {
+function renderPlayerDetailInto(container, data) {
   const { info, last_events, next_events } = data;
 
-  detailEl.innerHTML = `
-    ${backLink()}
+  container.innerHTML = `
+    ${backLinkHtml()}
     <div class="detail-header">
       ${info.thumb ? `<img src="${info.thumb}" alt="${info.name}" />` : ""}
       <div>
@@ -263,17 +283,6 @@ function renderPlayerDetail(data) {
     </div>
 
     <div class="category">
-      <h3>Compare Your Stats</h3>
-      <div class="compare-form">
-        <label>Height (cm)<input type="number" id="cmp-height" placeholder="e.g. 180" /></label>
-        <label>Weight (kg)<input type="number" id="cmp-weight" placeholder="e.g. 75" /></label>
-        <label>Age (years)<input type="number" id="cmp-age" placeholder="e.g. 25" /></label>
-        <button type="button" id="cmp-btn">Compare</button>
-      </div>
-      <div id="cmp-result"></div>
-    </div>
-
-    <div class="category">
       <h3>Team's Recent Results</h3>
       ${eventsTable(last_events, true)}
     </div>
@@ -283,10 +292,64 @@ function renderPlayerDetail(data) {
       ${eventsTable(next_events, false)}
     </div>
   `;
-  detailEl.classList.remove("hidden");
-  attachBack();
+}
 
-  document.getElementById("cmp-btn").addEventListener("click", () => {
+function renderFullDetail(container, item, data, onBack) {
+  if (item.type === "team") {
+    renderTeamDetailInto(container, data);
+  } else {
+    renderPlayerDetailInto(container, data);
+  }
+  container.classList.remove("hidden");
+  document.getElementById("back-link").addEventListener("click", onBack);
+}
+
+async function renderCompareDetail(container, item, data, onBack) {
+  const info = data.info;
+
+  const statsRes = await fetch("/api/stats/me");
+  const statsData = await statsRes.json();
+  const bio = {};
+  (statsData.stats || []).forEach((s) => {
+    if (s.sport === "Bio" && !(s.metric_key in bio)) {
+      bio[s.metric_key] = s.value;
+    }
+  });
+
+  container.innerHTML = `
+    ${backLinkHtml()}
+    <div class="detail-header">
+      ${info.thumb ? `<img src="${info.thumb}" alt="${info.name}" />` : ""}
+      <div>
+        <h2>${info.name}</h2>
+        <div class="result-meta">${info.sport || ""}${info.team ? " · " + info.team : ""}</div>
+      </div>
+    </div>
+
+    <div class="category">
+      <h3>Compare Your Bio Stats</h3>
+      <div class="compare-form">
+        <label>Height (cm)<input type="number" id="cmp-height" value="${bio.height_cm ?? ""}" placeholder="e.g. 180" /></label>
+        <label>Weight (kg)<input type="number" id="cmp-weight" value="${bio.weight_kg ?? ""}" placeholder="e.g. 75" /></label>
+        <label>Age (years)<input type="number" id="cmp-age" value="${bio.age ?? ""}" placeholder="e.g. 25" /></label>
+      </div>
+      <div class="compare-form">
+        <button type="button" id="cmp-btn">Compare</button>
+        <button type="button" id="cmp-save-btn">Save as My Bio Stats</button>
+      </div>
+      <p class="empty-note">${
+        Object.keys(bio).length
+          ? "Prefilled from your last saved Your Stats entries."
+          : "No saved Bio stats yet — log some in Your Stats, or just type values below."
+      }</p>
+      <div id="cmp-save-msg" class="empty-note hidden"></div>
+      <div id="cmp-result"></div>
+    </div>
+  `;
+  container.classList.remove("hidden");
+  document.getElementById("back-link").addEventListener("click", onBack);
+
+  function runCompare() {
     const you = {
       height: parseFloat(document.getElementById("cmp-height").value),
       weight: parseFloat(document.getElementById("cmp-weight").value),
@@ -298,5 +361,454 @@ function renderPlayerDetail(data) {
       compareRow("Age", you.age, info.age, " yrs", info.name),
     ].join("");
     document.getElementById("cmp-result").innerHTML = rows;
+  }
+
+  document.getElementById("cmp-btn").addEventListener("click", runCompare);
+
+  document.getElementById("cmp-save-btn").addEventListener("click", async () => {
+    const entries = [
+      { sport: "Bio", metric_key: "height_cm", value: document.getElementById("cmp-height").value },
+      { sport: "Bio", metric_key: "weight_kg", value: document.getElementById("cmp-weight").value },
+      { sport: "Bio", metric_key: "age", value: document.getElementById("cmp-age").value },
+    ].filter((e) => e.value !== "");
+
+    for (const entry of entries) {
+      await fetch("/api/stats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+    }
+
+    const msg = document.getElementById("cmp-save-msg");
+    msg.textContent = "Saved to Your Stats!";
+    msg.classList.remove("hidden");
+    setTimeout(() => msg.classList.add("hidden"), 2500);
   });
+
+  if (bio.height_cm !== undefined || bio.weight_kg !== undefined || bio.age !== undefined) {
+    runCompare();
+  }
+}
+
+// ---------- Reusable search widget ----------
+
+function setupSearchWidget({ formId, inputId, resultsId, detailId, messageId, typeFilter, renderDetail }) {
+  const form = document.getElementById(formId);
+  const input = document.getElementById(inputId);
+  const resultsEl = document.getElementById(resultsId);
+  const detailEl = document.getElementById(detailId);
+  const messageEl = document.getElementById(messageId);
+
+  function showMsg(text) {
+    messageEl.textContent = text;
+    messageEl.classList.toggle("hidden", !text);
+  }
+
+  function clearEl(el) {
+    el.innerHTML = "";
+    el.classList.add("hidden");
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const query = input.value.trim();
+    if (!query) return;
+
+    clearEl(detailEl);
+    clearEl(resultsEl);
+    showMsg("Searching...");
+
+    try {
+      const url = `/api/search?q=${encodeURIComponent(query)}` + (typeFilter ? `&type=${typeFilter}` : "");
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (res.status === 429) {
+        showMsg(data.error || "Rate limit reached, please wait a moment and try again.");
+        return;
+      }
+      if (!data.results || data.results.length === 0) {
+        showMsg(`No results for "${query}".`);
+        return;
+      }
+      showMsg("");
+      renderResultsList(data.results);
+    } catch (err) {
+      showMsg("Something went wrong reaching the server.");
+    }
+  });
+
+  function renderResultsList(results) {
+    resultsEl.innerHTML = "";
+    resultsEl.classList.remove("hidden");
+
+    for (const item of results) {
+      const li = document.createElement("li");
+      li.className = "result-card";
+      li.innerHTML = `
+        ${item.thumb ? `<img src="${item.thumb}" alt="${item.name}" />` : ""}
+        <div>
+          <div class="result-name">
+            <span class="badge">${item.type}</span>${item.name}
+          </div>
+          <div class="result-meta">${item.sport || ""}${item.league ? " · " + item.league : ""}${item.team ? " · " + item.team : ""}</div>
+        </div>
+      `;
+      li.addEventListener("click", () => selectItem(item));
+      resultsEl.appendChild(li);
+    }
+  }
+
+  async function selectItem(item) {
+    clearEl(resultsEl);
+    showMsg("Loading details...");
+
+    try {
+      const res = await fetch(`/api/${item.type}/${item.id}`);
+      const data = await res.json();
+
+      if (res.status === 429) {
+        showMsg(data.error || "Rate limit reached, please wait a moment and try again.");
+        return;
+      }
+      if (res.status === 404) {
+        showMsg(data.error || "Not found.");
+        return;
+      }
+      showMsg("");
+      await renderDetail(detailEl, item, data, () => {
+        clearEl(detailEl);
+        resultsEl.classList.remove("hidden");
+      });
+    } catch (err) {
+      showMsg("Something went wrong reaching the server.");
+    }
+  }
+}
+
+// ---------- Player Stats tab ----------
+
+function renderPlayerStatsPanel() {
+  const panel = document.getElementById("tab-player-stats");
+  if (panel.dataset.initialized) return;
+  panel.dataset.initialized = "true";
+
+  panel.innerHTML = `
+    <form id="ps-search-form" class="search-form">
+      <input type="text" id="ps-search-input" placeholder="e.g. Arsenal, Lakers, Messi, Tiger Woods" autocomplete="off" />
+      <button type="submit">Search</button>
+    </form>
+    <div id="ps-message" class="message hidden"></div>
+    <ul id="ps-results" class="results hidden"></ul>
+    <section id="ps-detail" class="detail hidden"></section>
+  `;
+
+  setupSearchWidget({
+    formId: "ps-search-form",
+    inputId: "ps-search-input",
+    resultsId: "ps-results",
+    detailId: "ps-detail",
+    messageId: "ps-message",
+    typeFilter: null,
+    renderDetail: renderFullDetail,
+  });
+}
+
+// ---------- Compare tab ----------
+
+function renderComparePanel() {
+  const panel = document.getElementById("tab-compare");
+  if (panel.dataset.initialized) return;
+  panel.dataset.initialized = "true";
+
+  panel.innerHTML = `
+    <form id="cp-search-form" class="search-form">
+      <input type="text" id="cp-search-input" placeholder="Search an athlete, e.g. Messi, Tiger Woods" autocomplete="off" />
+      <button type="submit">Search</button>
+    </form>
+    <div id="cp-message" class="message hidden"></div>
+    <ul id="cp-results" class="results hidden"></ul>
+    <section id="cp-detail" class="detail hidden"></section>
+  `;
+
+  setupSearchWidget({
+    formId: "cp-search-form",
+    inputId: "cp-search-input",
+    resultsId: "cp-results",
+    detailId: "cp-detail",
+    messageId: "cp-message",
+    typeFilter: "player",
+    renderDetail: renderCompareDetail,
+  });
+}
+
+// ---------- Your Stats tab ----------
+
+function renderYourStats() {
+  const panel = document.getElementById("tab-your-stats");
+  const sports = Object.keys(metricsCatalog);
+
+  panel.innerHTML = `
+    <div class="category">
+      <h3>Log a New Stat</h3>
+      <div class="stat-form">
+        <label>Sport
+          <select id="stat-sport">
+            ${sports.map((s) => `<option value="${s}">${s}</option>`).join("")}
+          </select>
+        </label>
+        <label>Metric
+          <select id="stat-metric"></select>
+        </label>
+        <label>Value
+          <input type="number" step="any" id="stat-value" placeholder="e.g. 420" />
+        </label>
+        <button type="button" id="stat-save-btn">Log Entry</button>
+      </div>
+      <div id="stat-message" class="message hidden"></div>
+    </div>
+    <div class="category">
+      <h3>Your History</h3>
+      <div id="stat-history"></div>
+    </div>
+  `;
+
+  const sportSelect = document.getElementById("stat-sport");
+  const metricSelect = document.getElementById("stat-metric");
+
+  function populateMetrics() {
+    const metrics = metricsCatalog[sportSelect.value] || [];
+    metricSelect.innerHTML = metrics
+      .map((m) => `<option value="${m.key}">${m.label}${m.unit ? " (" + m.unit + ")" : ""}</option>`)
+      .join("");
+  }
+  sportSelect.addEventListener("change", populateMetrics);
+  populateMetrics();
+
+  document.getElementById("stat-save-btn").addEventListener("click", async () => {
+    const sport = sportSelect.value;
+    const metric_key = metricSelect.value;
+    const value = document.getElementById("stat-value").value;
+
+    if (value === "") {
+      showStatMessage("Enter a value first.");
+      return;
+    }
+
+    const res = await fetch("/api/stats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sport, metric_key, value }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showStatMessage(data.error || "Could not save.");
+      return;
+    }
+
+    document.getElementById("stat-value").value = "";
+    showStatMessage("Saved!");
+    loadStatHistory();
+  });
+
+  loadStatHistory();
+}
+
+function showStatMessage(text) {
+  const el = document.getElementById("stat-message");
+  el.textContent = text;
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 2500);
+}
+
+async function loadStatHistory() {
+  const res = await fetch("/api/stats/me");
+  const data = await res.json();
+  const container = document.getElementById("stat-history");
+
+  if (!data.stats || data.stats.length === 0) {
+    container.innerHTML = `<p class="empty-note">No stats logged yet.</p>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <table>
+      <thead><tr><th>Date</th><th>Sport</th><th>Metric</th><th>Value</th></tr></thead>
+      <tbody>
+        ${data.stats
+          .map(
+            (s) => `
+          <tr>
+            <td>${new Date(s.recorded_at).toLocaleString()}</td>
+            <td>${s.sport}</td>
+            <td>${s.label}</td>
+            <td>${s.value}${s.unit ? " " + s.unit : ""}</td>
+          </tr>
+        `
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---------- Leaderboard tab ----------
+
+async function renderLeaderboardPanel() {
+  const panel = document.getElementById("tab-leaderboard");
+  const res = await fetch("/api/leaderboard/options");
+  const data = await res.json();
+  const options = data.options || [];
+
+  if (options.length === 0) {
+    panel.innerHTML = `<p class="empty-note">No leaderboard data yet — log some sport metrics in Your Stats first (yours and other users' entries will show up here).</p>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="category">
+      <h3>Leaderboard</h3>
+      <div class="compare-form">
+        <label>Board
+          <select id="lb-select">
+            ${options.map((o, i) => `<option value="${i}">${o.sport} — ${o.label}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <div id="lb-result"></div>
+    </div>
+  `;
+
+  const select = document.getElementById("lb-select");
+
+  async function loadBoard() {
+    const opt = options[select.value];
+    const res = await fetch(
+      `/api/leaderboard?sport=${encodeURIComponent(opt.sport)}&metric_key=${encodeURIComponent(opt.metric_key)}`
+    );
+    const data = await res.json();
+    const container = document.getElementById("lb-result");
+
+    if (!data.entries || data.entries.length === 0) {
+      container.innerHTML = `<p class="empty-note">No entries yet.</p>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <table>
+        <thead><tr><th>#</th><th>User</th><th>Value</th><th>Logged</th></tr></thead>
+        <tbody>
+          ${data.entries
+            .map(
+              (e) => `
+            <tr class="${e.username === currentUsername ? "highlight-row" : ""}">
+              <td>${e.rank}</td><td>${e.username}</td><td>${e.value}${e.unit ? " " + e.unit : ""}</td>
+              <td>${new Date(e.recorded_at).toLocaleDateString()}</td>
+            </tr>
+          `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  select.addEventListener("change", loadBoard);
+  loadBoard();
+}
+
+// ---------- Projections tab ----------
+
+async function renderProjectionsPanel() {
+  const panel = document.getElementById("tab-projections");
+  const res = await fetch("/api/stats/me");
+  const data = await res.json();
+
+  const counts = {};
+  (data.stats || []).forEach((s) => {
+    counts[s.metric_key] = counts[s.metric_key] || { count: 0, label: s.label, sport: s.sport };
+    counts[s.metric_key].count += 1;
+  });
+  const eligible = Object.entries(counts).filter(([, v]) => v.count >= 2);
+
+  if (eligible.length === 0) {
+    panel.innerHTML = `<p class="empty-note">Log at least 2 entries for the same metric (in Your Stats) to see a projection.</p>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="category">
+      <h3>Projections</h3>
+      <div class="compare-form">
+        <label>Metric
+          <select id="proj-select">
+            ${eligible.map(([k, v]) => `<option value="${k}">${v.sport} — ${v.label} (${v.count} entries)</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <div id="proj-result"></div>
+    </div>
+  `;
+
+  const select = document.getElementById("proj-select");
+
+  async function loadProjection() {
+    const res = await fetch(`/api/projections/me?metric_key=${encodeURIComponent(select.value)}`);
+    const data = await res.json();
+    const container = document.getElementById("proj-result");
+
+    if (!res.ok) {
+      container.innerHTML = `<p class="empty-note">${data.error}</p>`;
+      return;
+    }
+
+    const { metric, history, trend_per_day, projections } = data;
+    const trendDir = trend_per_day === 0 ? "flat" : trend_per_day > 0 ? "increasing" : "decreasing";
+
+    container.innerHTML = `
+      <p><strong>Trend:</strong> ${trendDir} by ${Math.abs(trend_per_day)}${metric.unit}/day</p>
+      ${sparkline(history)}
+      <table>
+        <thead><tr><th>In</th><th>Projected ${metric.label}</th></tr></thead>
+        <tbody>
+          ${projections
+            .map(
+              (p) => `<tr><td>${p.days_from_now} days</td><td>${p.value}${metric.unit ? " " + metric.unit : ""}</td></tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+      <p class="empty-note">Simple linear trend from your own logged history — a fun estimate, not a scientific prediction.</p>
+    `;
+  }
+
+  select.addEventListener("change", loadProjection);
+  loadProjection();
+}
+
+function sparkline(history) {
+  if (history.length < 2) return "";
+  const values = history.map((h) => h.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const width = 320;
+  const height = 80;
+  const pad = 8;
+
+  const points = values
+    .map((v, i) => {
+      const x = pad + (i / (values.length - 1)) * (width - pad * 2);
+      const y = height - pad - ((v - min) / range) * (height - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  return `
+    <svg width="${width}" height="${height}" class="sparkline" viewBox="0 0 ${width} ${height}">
+      <polyline points="${points}" fill="none" stroke="#4f8cff" stroke-width="2" />
+    </svg>
+  `;
 }

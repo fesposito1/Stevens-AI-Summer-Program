@@ -7,20 +7,52 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-  <header>
-    <h1>Sports Stats Search</h1>
-    <p class="subtitle">Search any team or player across soccer, basketball, football, hockey, baseball, golf, tennis, and more.</p>
-    <form id="search-form">
-      <input type="text" id="search-input" placeholder="e.g. Arsenal, Lakers, Messi, Tiger Woods" autocomplete="off" />
-      <button type="submit">Search</button>
-    </form>
-  </header>
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-box">
+      <h1>Sports Stats Search</h1>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab-btn active" data-auth-tab="login">Login</button>
+        <button type="button" class="auth-tab-btn" data-auth-tab="signup">Sign Up</button>
+      </div>
+      <form id="login-form" class="auth-form">
+        <input type="text" id="login-username" placeholder="Username" autocomplete="username" required />
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
+        <button type="submit">Log In</button>
+      </form>
+      <form id="signup-form" class="auth-form hidden">
+        <input type="text" id="signup-username" placeholder="Username (min 3 chars)" autocomplete="username" required />
+        <input type="password" id="signup-password" placeholder="Password (min 6 chars)" autocomplete="new-password" required />
+        <button type="submit">Create Account</button>
+      </form>
+      <div id="auth-message" class="message hidden"></div>
+    </div>
+  </div>
 
-  <main>
-    <div id="message" class="message hidden"></div>
-    <ul id="results" class="results hidden"></ul>
-    <section id="detail" class="detail hidden"></section>
-  </main>
+  <div id="app" class="app hidden">
+    <header class="app-header">
+      <h1>Sports Stats Search</h1>
+      <div class="header-right">
+        <span id="current-username"></span>
+        <button type="button" id="logout-btn">Log Out</button>
+      </div>
+    </header>
+
+    <nav class="tab-nav">
+      <button type="button" class="tab-btn active" data-tab="your-stats">Your Stats</button>
+      <button type="button" class="tab-btn" data-tab="player-stats">Player Stats</button>
+      <button type="button" class="tab-btn" data-tab="compare">Compare</button>
+      <button type="button" class="tab-btn" data-tab="leaderboard">Leaderboard</button>
+      <button type="button" class="tab-btn" data-tab="projections">Projections</button>
+    </nav>
+
+    <main>
+      <section id="tab-your-stats" class="tab-panel active"></section>
+      <section id="tab-player-stats" class="tab-panel"></section>
+      <section id="tab-compare" class="tab-panel"></section>
+      <section id="tab-leaderboard" class="tab-panel"></section>
+      <section id="tab-projections" class="tab-panel"></section>
+    </main>
+  </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
