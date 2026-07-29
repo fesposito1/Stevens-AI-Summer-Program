@@ -150,20 +150,46 @@ def calc_age(date_born):
     return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
 
-def linear_regression(points):
+def weighted_linear_regression(points):
+    """points: list of (x, y, weight). Well-rested entries (higher weight) count more,
+    since a fatigued measurement is a noisier read on someone's true current level."""
     n = len(points)
     if n < 2:
         return None
-    sum_x = sum(p[0] for p in points)
-    sum_y = sum(p[1] for p in points)
-    sum_xy = sum(p[0] * p[1] for p in points)
-    sum_x2 = sum(p[0] ** 2 for p in points)
-    denom = n * sum_x2 - sum_x ** 2
+    sum_w = sum(w for _, _, w in points)
+    sum_wx = sum(w * x for x, _, w in points)
+    sum_wy = sum(w * y for _, y, w in points)
+    sum_wxy = sum(w * x * y for x, y, w in points)
+    sum_wx2 = sum(w * x * x for x, _, w in points)
+    denom = sum_w * sum_wx2 - sum_wx ** 2
     if denom == 0:
         return None
-    slope = (n * sum_xy - sum_x * sum_y) / denom
-    intercept = (sum_y - slope * sum_x) / n
+    slope = (sum_w * sum_wxy - sum_wx * sum_wy) / denom
+    intercept = (sum_wy - slope * sum_wx) / sum_w
     return slope, intercept
+
+
+def age_adjustment_factor(age):
+    """Rough heuristic, not a physiological model: younger users tend to have more
+    headroom to keep improving quickly, older users tend to see slower marginal gains."""
+    if age is None:
+        return 1.0
+    if age < 18:
+        return 1.2
+    if age < 30:
+        return 1.0
+    if age < 40:
+        return 0.85
+    if age < 50:
+        return 0.7
+    return 0.55
+
+
+def get_latest_bio_age(user_id):
+    rows = db.get_stats_for_user(user_id, metric_key="age")
+    if not rows:
+        return None
+    return rows[-1]["value"]
 
 
 def team_summary(team):
@@ -269,9 +295,15 @@ def log_stat():
     except (TypeError, ValueError):
         return jsonify({"error": "Value must be a number."}), 400
 
+    rest_days = payload.get("rest_days")
+    try:
+        rest_days = max(0.0, float(rest_days)) if rest_days not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        rest_days = 0.0
+
     db.add_stat_log(
         session["user_id"], sport, metric_key, metric["label"], metric["unit"], metric["direction"],
-        value, datetime.now().isoformat(),
+        value, datetime.now().isoformat(), rest_days,
     )
     return jsonify({"ok": True})
 
@@ -318,21 +350,32 @@ def projections_me():
     for row in rows:
         ts = datetime.fromisoformat(row["recorded_at"])
         days = (ts - first_ts).total_seconds() / 86400
-        points.append((days, row["value"]))
+        rest_days = row.get("rest_days") or 0
+        weight = 1 + min(rest_days, 7) / 7  # well-rested entries count up to 2x
+        points.append((days, row["value"], weight))
 
     last_day = points[-1][0]
     if last_day < 1:
         return jsonify({"error": "Your logged entries are too close together in time to project a reliable trend — log entries on different days."}), 400
 
-    reg = linear_regression(points)
+    reg = weighted_linear_regression(points)
     if not reg:
         return jsonify({"error": "Not enough variation in your logged values to project a trend."}), 400
-    slope, intercept = reg
+    raw_slope, _intercept = reg
 
+    age = get_latest_bio_age(session["user_id"])
+    age_factor = age_adjustment_factor(age)
+    adjusted_slope = raw_slope * age_factor
+
+    last_value = points[-1][1]
+    # Diminishing-returns (saturating) curve rather than unbounded linear extrapolation:
+    # the effective rate tapers off as the horizon grows, approaching an asymptote of
+    # last_value + adjusted_slope * TAU rather than climbing forever.
+    TAU = 60.0
     projections = []
-    for offset in (30, 90, 365):
-        proj_day = last_day + offset
-        projections.append({"days_from_now": offset, "value": round(slope * proj_day + intercept, 2)})
+    for horizon in (30, 90, 365):
+        change = adjusted_slope * TAU * horizon / (TAU + horizon)
+        projections.append({"days_from_now": horizon, "value": round(last_value + change, 2)})
 
     return jsonify({
         "metric": {
@@ -341,8 +384,16 @@ def projections_me():
             "unit": rows[0]["unit"],
             "direction": rows[0]["direction"],
         },
-        "history": [{"date": r["recorded_at"], "value": r["value"]} for r in rows],
-        "trend_per_day": round(slope, 5),
+        "history": [{"date": r["recorded_at"], "value": r["value"], "rest_days": r.get("rest_days") or 0} for r in rows],
+        "trend_per_day": round(raw_slope, 5),
+        "adjusted_trend_per_day": round(adjusted_slope, 5),
+        "age_used": age,
+        "age_factor": age_factor,
+        "model_note": (
+            "Rest-day-weighted trend, adjusted for age, projected with a diminishing-returns "
+            "curve that levels off over time rather than extending in a straight line. "
+            "A heuristic estimate, not a physiological model."
+        ),
         "projections": projections,
     })
 

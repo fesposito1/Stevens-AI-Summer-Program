@@ -44,9 +44,15 @@ def init_db():
                 unit TEXT NOT NULL,
                 direction TEXT NOT NULL,
                 value REAL NOT NULL,
-                recorded_at TEXT NOT NULL
+                recorded_at TEXT NOT NULL,
+                rest_days REAL DEFAULT 0
             )
         """)
+        # Migration for databases created before rest_days existed.
+        try:
+            conn.execute("ALTER TABLE stat_logs ADD COLUMN rest_days REAL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
 
 
 def create_user(username, password_hash, created_at):
@@ -65,12 +71,12 @@ def get_user_by_username(username):
         return dict(row) if row else None
 
 
-def add_stat_log(user_id, sport, metric_key, label, unit, direction, value, recorded_at):
+def add_stat_log(user_id, sport, metric_key, label, unit, direction, value, recorded_at, rest_days=0):
     with get_conn() as conn:
         conn.execute(
-            """INSERT INTO stat_logs (user_id, sport, metric_key, label, unit, direction, value, recorded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, sport, metric_key, label, unit, direction, value, recorded_at),
+            """INSERT INTO stat_logs (user_id, sport, metric_key, label, unit, direction, value, recorded_at, rest_days)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, sport, metric_key, label, unit, direction, value, recorded_at, rest_days),
         )
 
 
