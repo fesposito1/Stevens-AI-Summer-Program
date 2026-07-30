@@ -332,8 +332,16 @@ function renderTeamDetailInto(container, data) {
   `;
 }
 
-function renderPlayerDetailInto(container, data) {
+async function renderPlayerDetailInto(container, data, item) {
   const { info, next_events } = data;
+  const playerId = item?.id;
+
+  let isFollowing = false;
+  if (playerId) {
+    const followRes = await fetch("/api/follows");
+    const followData = await followRes.json();
+    isFollowing = (followData.players || []).some((p) => String(p.player_id) === String(playerId));
+  }
 
   container.innerHTML = `
     ${backLinkHtml()}
@@ -343,6 +351,7 @@ function renderPlayerDetailInto(container, data) {
         <h2>${info.name}</h2>
         <div class="result-meta">${info.sport || ""}${info.team ? " · " + info.team : ""}${info.position ? " · " + info.position : ""}</div>
       </div>
+      ${playerId ? `<button type="button" id="follow-btn" class="follow-btn ${isFollowing ? "following" : ""}">${isFollowing ? "★ Following" : "☆ Follow"}</button>` : ""}
     </div>
 
     <div class="category">
@@ -361,13 +370,38 @@ function renderPlayerDetailInto(container, data) {
       ${eventsTable(next_events, false)}
     </div>
   `;
+
+  if (playerId) {
+    document.getElementById("follow-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("follow-btn");
+      if (isFollowing) {
+        await fetch(`/api/follows/${playerId}`, { method: "DELETE" });
+        isFollowing = false;
+      } else {
+        await fetch("/api/follows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            player_id: playerId,
+            name: info.name,
+            sport: info.sport,
+            team: info.team,
+            thumb: info.thumb,
+          }),
+        });
+        isFollowing = true;
+      }
+      btn.textContent = isFollowing ? "★ Following" : "☆ Follow";
+      btn.classList.toggle("following", isFollowing);
+    });
+  }
 }
 
-function renderFullDetail(container, item, data, onBack) {
+async function renderFullDetail(container, item, data, onBack) {
   if (item.type === "team") {
     renderTeamDetailInto(container, data);
   } else {
-    renderPlayerDetailInto(container, data);
+    await renderPlayerDetailInto(container, data, item);
   }
   container.classList.remove("hidden");
   document.getElementById("back-link").addEventListener("click", onBack);
@@ -738,13 +772,48 @@ function renderPieChart(slices) {
   `;
 }
 
+async function viewPlayerById(playerId) {
+  activateTab("player-stats");
+  const resultsEl = document.getElementById("ps-results");
+  const detailEl = document.getElementById("ps-detail");
+  const messageEl = document.getElementById("ps-message");
+  resultsEl.innerHTML = "";
+  resultsEl.classList.add("hidden");
+  detailEl.innerHTML = "";
+  detailEl.classList.add("hidden");
+  messageEl.textContent = "Loading details...";
+  messageEl.classList.remove("hidden");
+
+  try {
+    const res = await fetch(`/api/player/${playerId}`);
+    const data = await res.json();
+    if (!res.ok) {
+      messageEl.textContent = data.error || "Not found.";
+      return;
+    }
+    messageEl.classList.add("hidden");
+    await renderFullDetail(detailEl, { id: playerId, type: "player" }, data, () => {
+      detailEl.innerHTML = "";
+      detailEl.classList.add("hidden");
+    });
+  } catch (err) {
+    messageEl.textContent = "Something went wrong reaching the server.";
+  }
+}
+
 async function renderHomePanel() {
   const panel = document.getElementById("tab-home");
-  const [res, todayRes] = await Promise.all([fetch("/api/stats/me"), fetch("/api/events/today")]);
+  const [res, todayRes, followRes] = await Promise.all([
+    fetch("/api/stats/me"),
+    fetch("/api/events/today"),
+    fetch("/api/follows"),
+  ]);
   const data = await res.json();
   const todayData = await todayRes.json();
+  const followData = await followRes.json();
   const stats = data.stats || [];
   const dueEvents = (todayData.events || []).filter((e) => !e.logged);
+  const followed = followData.players || [];
 
   const bySport = {};
   stats.forEach((s) => {
@@ -793,11 +862,31 @@ async function renderHomePanel() {
     )
     .join("");
 
+  const followedHtml = followed.length
+    ? `<div class="followed-grid">${followed
+        .map(
+          (p) => `
+        <div class="followed-card" data-player-id="${p.player_id}">
+          ${p.thumb ? `<img src="${p.thumb}" alt="${p.name}" />` : ""}
+          <div class="followed-info">
+            <div class="followed-name">${p.name}</div>
+            <div class="result-meta">${p.sport || ""}${p.team ? " · " + p.team : ""}</div>
+          </div>
+          <button type="button" class="followed-unfollow-btn" data-player-id="${p.player_id}" title="Unfollow">&times;</button>
+        </div>`
+        )
+        .join("")}</div>`
+    : `<p class="empty-note">You're not following anyone yet — find a player in Player Stats and hit Follow.</p>`;
+
   panel.innerHTML = `
     <div class="category home-greeting">
       <h2>Welcome back, ${currentUsername}!</h2>
       <p class="subtitle">Here's a snapshot of what you've logged so far.</p>
       ${reminderHtml}
+    </div>
+    <div class="category">
+      <h3>Players You Follow</h3>
+      ${followedHtml}
     </div>
     <div class="category">
       <h3>Your Stats Breakdown</h3>
@@ -808,6 +897,20 @@ async function renderHomePanel() {
       ${growthHtml}
     </div>
   `;
+
+  panel.querySelectorAll(".followed-card").forEach((card) => {
+    card.addEventListener("click", (event) => {
+      if (event.target.closest(".followed-unfollow-btn")) return;
+      viewPlayerById(card.dataset.playerId);
+    });
+  });
+  panel.querySelectorAll(".followed-unfollow-btn").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await fetch(`/api/follows/${btn.dataset.playerId}`, { method: "DELETE" });
+      renderHomePanel();
+    });
+  });
 
   dueEvents.forEach((e) => {
     const logBtn = document.getElementById(`reminder-log-btn-${e.id}`);

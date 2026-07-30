@@ -173,6 +173,70 @@ main {
   color: var(--muted);
 }
 
+.follow-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.follow-btn.following {
+  background: var(--accent);
+  color: white;
+}
+
+.followed-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.followed-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.followed-card:hover {
+  border-color: var(--accent);
+}
+
+.followed-card img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #ffffff10;
+}
+
+.followed-info {
+  flex: 1;
+}
+
+.followed-name {
+  font-weight: 600;
+}
+
+.followed-unfollow-btn {
+  flex-shrink: 0;
+  padding: 0.2rem 0.6rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.followed-unfollow-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .back-link {
   display: inline-block;
   margin-bottom: 1rem;

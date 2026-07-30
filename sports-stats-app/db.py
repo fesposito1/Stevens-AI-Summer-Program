@@ -112,6 +112,19 @@ def init_db():
             """)
             conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS event_time TEXT")
             conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS sport TEXT NOT NULL DEFAULT 'Soccer'")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS followed_players (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    player_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    sport TEXT,
+                    team TEXT,
+                    thumb TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (user_id, player_id)
+                )
+            """)
         else:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -153,6 +166,19 @@ def init_db():
                     notes TEXT,
                     logged INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS followed_players (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    player_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    sport TEXT,
+                    team TEXT,
+                    thumb TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (user_id, player_id)
                 )
             """)
             # Migrations for databases created before these columns existed.
@@ -316,6 +342,33 @@ def mark_event_logged(event_id):
 def delete_event(event_id, user_id):
     with get_conn() as conn:
         conn.execute("DELETE FROM events WHERE id = ? AND user_id = ?", (event_id, user_id))
+
+
+def follow_player(user_id, player_id, name, sport, team, thumb, created_at):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO followed_players (user_id, player_id, name, sport, team, thumb, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (user_id, player_id) DO NOTHING""",
+            (user_id, player_id, name, sport, team, thumb, created_at),
+        )
+
+
+def unfollow_player(user_id, player_id):
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM followed_players WHERE user_id = ? AND player_id = ?",
+            (user_id, player_id),
+        )
+
+
+def get_followed_players(user_id):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM followed_players WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_leaderboard_options():
