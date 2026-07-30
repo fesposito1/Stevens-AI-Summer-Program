@@ -162,7 +162,10 @@ def sportsdb_get(endpoint, params=None):
 
     response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
     if response.status_code == 429:
-        raise RateLimitError("TheSportsDB rate limit reached, try again shortly.")
+        raise RateLimitError(
+            "The sports data API is shared by everyone using this app right now and just hit "
+            "its per-minute limit — wait a few seconds and try again."
+        )
     response.raise_for_status()
     try:
         data = response.json()

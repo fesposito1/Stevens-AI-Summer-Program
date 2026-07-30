@@ -560,7 +560,7 @@ function setupSearchWidget({ formId, inputId, resultsId, detailId, messageId, ty
       const data = await res.json();
 
       if (res.status === 429) {
-        showMsg(data.error || "Rate limit reached, please wait a moment and try again.");
+        showMsg(data.error || "The sports data API is shared by everyone using this app and just hit its per-minute limit — wait a few seconds and try again.");
         return;
       }
       if (!data.results || data.results.length === 0) {
@@ -604,7 +604,7 @@ function setupSearchWidget({ formId, inputId, resultsId, detailId, messageId, ty
       const data = await res.json();
 
       if (res.status === 429) {
-        showMsg(data.error || "Rate limit reached, please wait a moment and try again.");
+        showMsg(data.error || "The sports data API is shared by everyone using this app and just hit its per-minute limit — wait a few seconds and try again.");
         return;
       }
       if (res.status === 404) {
