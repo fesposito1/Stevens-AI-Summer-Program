@@ -53,6 +53,18 @@ def init_db():
             conn.execute("ALTER TABLE stat_logs ADD COLUMN rest_days REAL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                event_date TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                opponent TEXT,
+                notes TEXT,
+                logged INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
 
 
 def create_user(username, password_hash, created_at):
@@ -93,6 +105,52 @@ def get_stats_for_user(user_id, metric_key=None):
                 (user_id,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+
+def add_event(user_id, event_date, event_type, opponent, notes, created_at):
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO events (user_id, event_date, event_type, opponent, notes, logged, created_at)
+               VALUES (?, ?, ?, ?, ?, 0, ?)""",
+            (user_id, event_date, event_type, opponent, notes, created_at),
+        )
+        return cur.lastrowid
+
+
+def get_events_for_user(user_id):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM events WHERE user_id = ? ORDER BY event_date ASC",
+            (user_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_events_on_date(user_id, event_date):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM events WHERE user_id = ? AND event_date = ? ORDER BY id ASC",
+            (user_id, event_date),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_event(event_id, user_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND user_id = ?", (event_id, user_id)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def mark_event_logged(event_id):
+    with get_conn() as conn:
+        conn.execute("UPDATE events SET logged = 1 WHERE id = ?", (event_id,))
+
+
+def delete_event(event_id, user_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM events WHERE id = ? AND user_id = ?", (event_id, user_id))
 
 
 def get_leaderboard_options():

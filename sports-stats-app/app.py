@@ -14,7 +14,7 @@ from flask import Flask, jsonify, render_template, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
-from metrics import SPORT_METRICS, metric_lookup
+from metrics import SPORT_METRICS, metric_lookup, SOCCER_GAME_METRIC_KEYS
 
 
 def resource_path(relative_path):
@@ -312,6 +312,86 @@ def log_stat():
 @login_required
 def stats_me():
     return jsonify({"stats": db.get_stats_for_user(session["user_id"])})
+
+
+# ---------- Schedule (matches & practices) ----------
+
+@app.route("/api/events", methods=["POST"])
+@login_required
+def create_event():
+    payload = request.get_json(silent=True) or {}
+    event_date = (payload.get("event_date") or "").strip()
+    event_type = payload.get("event_type")
+    opponent = (payload.get("opponent") or "").strip() or None
+    notes = (payload.get("notes") or "").strip() or None
+
+    if event_type not in ("match", "practice"):
+        return jsonify({"error": "event_type must be 'match' or 'practice'."}), 400
+    try:
+        datetime.strptime(event_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "event_date must be YYYY-MM-DD."}), 400
+
+    event_id = db.add_event(
+        session["user_id"], event_date, event_type, opponent, notes, datetime.now().isoformat()
+    )
+    return jsonify({"id": event_id})
+
+
+@app.route("/api/events/me")
+@login_required
+def events_me():
+    return jsonify({"events": db.get_events_for_user(session["user_id"])})
+
+
+@app.route("/api/events/today")
+@login_required
+def events_today():
+    today = datetime.now().strftime("%Y-%m-%d")
+    return jsonify({"date": today, "events": db.get_events_on_date(session["user_id"], today)})
+
+
+@app.route("/api/events/<int:event_id>", methods=["DELETE"])
+@login_required
+def delete_event_route(event_id):
+    if not db.get_event(event_id, session["user_id"]):
+        return jsonify({"error": "Event not found."}), 404
+    db.delete_event(event_id, session["user_id"])
+    return jsonify({"ok": True})
+
+
+@app.route("/api/events/<int:event_id>/log", methods=["POST"])
+@login_required
+def log_event_stats(event_id):
+    if not db.get_event(event_id, session["user_id"]):
+        return jsonify({"error": "Event not found."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    values = payload.get("values") or {}
+    recorded_at = datetime.now().isoformat()
+
+    saved = 0
+    for metric_key, raw_value in values.items():
+        if metric_key not in SOCCER_GAME_METRIC_KEYS or raw_value in (None, ""):
+            continue
+        metric = metric_lookup("Soccer", metric_key)
+        if not metric:
+            continue
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        db.add_stat_log(
+            session["user_id"], "Soccer", metric_key, metric["label"], metric["unit"], metric["direction"],
+            value, recorded_at, 0,
+        )
+        saved += 1
+
+    if saved == 0:
+        return jsonify({"error": "Enter at least one stat value."}), 400
+
+    db.mark_event_logged(event_id)
+    return jsonify({"ok": True, "saved": saved})
 
 
 # ---------- Leaderboard ----------

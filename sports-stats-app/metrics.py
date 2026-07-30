@@ -20,6 +20,15 @@ SPORT_METRICS = {
     "Soccer": [
         {"key": "sprint_40m_sec", "label": "40m Sprint", "unit": "sec", "direction": "lower"},
         {"key": "juggles_count", "label": "Juggling Count", "unit": "reps", "direction": "higher"},
+        {"key": "possession_completion_pct", "label": "Possession Completion", "unit": "%", "direction": "higher"},
+        {"key": "pass_completion_pct", "label": "Pass Completion Rate", "unit": "%", "direction": "higher"},
+        {"key": "tackles", "label": "Tackles", "unit": "reps", "direction": "higher"},
+        {"key": "interceptions", "label": "Interceptions", "unit": "reps", "direction": "higher"},
+        {"key": "goals", "label": "Goals", "unit": "reps", "direction": "higher"},
+        {"key": "assists", "label": "Assists", "unit": "reps", "direction": "higher"},
+        {"key": "shots_dominant_foot", "label": "Shots (Dominant Foot)", "unit": "reps", "direction": "higher"},
+        {"key": "shots_non_dominant_foot", "label": "Shots (Non-Dominant Foot)", "unit": "reps", "direction": "higher"},
+        {"key": "saves", "label": "Saves (Goalkeeper)", "unit": "reps", "direction": "higher"},
     ],
     "Baseball": [
         {"key": "batting_avg", "label": "Batting Average", "unit": "", "direction": "higher"},
@@ -46,6 +55,19 @@ SPORT_METRICS = {
         {"key": "mile_time_sec", "label": "Mile Time", "unit": "sec", "direction": "lower"},
     ],
 }
+
+
+SOCCER_GAME_METRIC_KEYS = [
+    "possession_completion_pct",
+    "pass_completion_pct",
+    "tackles",
+    "interceptions",
+    "goals",
+    "assists",
+    "shots_dominant_foot",
+    "shots_non_dominant_foot",
+    "saves",
+]
 
 
 def metric_lookup(sport, metric_key):

@@ -33,9 +33,10 @@ The exe is written to `dist/SportsStatsApp.exe`.
 ```
 app.py               Flask app: routes, auth, TheSportsDB fetch/cache, projections math,
                       and the pywebview window that hosts it all
-db.py                SQLite access layer — schema (users, stat_logs), user/stat CRUD,
+db.py                SQLite access layer — schema (users, stat_logs, events), user/stat/event CRUD,
                       leaderboard query
-metrics.py           Catalog of loggable metrics per sport (key, label, unit, higher/lower-is-better)
+metrics.py           Catalog of loggable metrics per sport (key, label, unit, higher/lower-is-better),
+                      plus which Soccer metrics count as "per-game" (used by the Calendar log form)
 templates/index.html Single-page HTML shell the frontend renders into
 static/script.js     Frontend logic — tabs, search, compare, leaderboard, projections, sparkline
 static/style.css     App styling (CSS custom properties for colors, layout, components)
@@ -63,6 +64,12 @@ dist/                Built standalone .exe (generated, not meant to be hand-edit
   (from your logged Bio age, if any), then projected forward with a diminishing-returns curve that
   levels off over time instead of extending in a straight line — 30/90/365-day estimates, plus a
   sparkline of your history.
+- **Calendar** — schedule soccer matches and practices on a day (with an optional opponent). On
+  any day you have one scheduled, the Home tab shows a reminder banner ("You have a Match today —
+  log your stats") that expands into a quick form for that day's match/practice stats (possession
+  completion, pass completion rate, tackles, interceptions, goals, assists, shots by dominant/
+  non-dominant foot, goalkeeper saves) — these save into Your Stats like any other metric, so they
+  also show up in the leaderboard and projections.
 
 ## Data & storage
 

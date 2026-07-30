@@ -77,7 +77,7 @@ function setupAuthUI() {
   document.getElementById("logout-btn").addEventListener("click", async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     currentUsername = null;
-    ["tab-home", "tab-your-stats", "tab-player-stats", "tab-compare", "tab-leaderboard", "tab-projections"].forEach((id) => {
+    ["tab-home", "tab-your-stats", "tab-calendar", "tab-player-stats", "tab-compare", "tab-leaderboard", "tab-projections"].forEach((id) => {
       const el = document.getElementById(id);
       el.innerHTML = "";
       delete el.dataset.initialized;
@@ -119,6 +119,7 @@ function activateTab(tab) {
 
   if (tab === "home") renderHomePanel();
   if (tab === "your-stats") renderYourStats();
+  if (tab === "calendar") renderCalendarPanel();
   if (tab === "player-stats") renderPlayerStatsPanel();
   if (tab === "compare") renderComparePanel();
   if (tab === "leaderboard") renderLeaderboardPanel();
@@ -544,6 +545,74 @@ function renderComparePanel() {
   });
 }
 
+// ---------- Match/practice stat logging (shared by Home banner + Calendar) ----------
+
+const GAME_METRIC_KEYS = [
+  "possession_completion_pct",
+  "pass_completion_pct",
+  "tackles",
+  "interceptions",
+  "goals",
+  "assists",
+  "shots_dominant_foot",
+  "shots_non_dominant_foot",
+  "saves",
+];
+
+function gameLogFormHtml(prefix) {
+  const metrics = (metricsCatalog["Soccer"] || []).filter((m) => GAME_METRIC_KEYS.includes(m.key));
+  return `
+    <div class="game-log-grid">
+      ${metrics
+        .map(
+          (m) => `
+        <label>${m.label}${m.unit ? ` (${m.unit})` : ""}
+          <input type="number" step="any" min="0" data-metric-key="${m.key}" id="${prefix}-${m.key}" />
+        </label>`
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+async function saveGameLog(eventId, formEl) {
+  const values = {};
+  formEl.querySelectorAll("[data-metric-key]").forEach((input) => {
+    if (input.value !== "") values[input.dataset.metricKey] = input.value;
+  });
+  const res = await fetch(`/api/events/${eventId}/log`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ values }),
+  });
+  const data = await res.json();
+  return res.ok ? { ok: true } : { ok: false, error: data.error };
+}
+
+function wireGameLogToggle(logBtn, formContainer, eventId, prefix, onSaved) {
+  logBtn.addEventListener("click", () => {
+    if (formContainer.dataset.built !== "true") {
+      formContainer.dataset.built = "true";
+      formContainer.innerHTML = `
+        ${gameLogFormHtml(prefix)}
+        <button type="button" class="save-log-btn">Save Stats</button>
+        <div class="log-msg empty-note hidden"></div>
+      `;
+      formContainer.querySelector(".save-log-btn").addEventListener("click", async () => {
+        const result = await saveGameLog(eventId, formContainer);
+        if (!result.ok) {
+          const msgEl = formContainer.querySelector(".log-msg");
+          msgEl.textContent = result.error || "Could not save.";
+          msgEl.classList.remove("hidden");
+          return;
+        }
+        onSaved();
+      });
+    }
+    formContainer.classList.toggle("hidden");
+  });
+}
+
 // ---------- Home tab ----------
 
 const PIE_COLORS = ["#14458f", "#2f7dc4", "#5aa9e6", "#8fd0f7", "#0a2f6b", "#3a5a8a", "#7ec8e3", "#1e6fb8"];
@@ -580,9 +649,11 @@ function renderPieChart(slices) {
 
 async function renderHomePanel() {
   const panel = document.getElementById("tab-home");
-  const res = await fetch("/api/stats/me");
+  const [res, todayRes] = await Promise.all([fetch("/api/stats/me"), fetch("/api/events/today")]);
   const data = await res.json();
+  const todayData = await todayRes.json();
   const stats = data.stats || [];
+  const dueEvents = (todayData.events || []).filter((e) => !e.logged);
 
   const bySport = {};
   stats.forEach((s) => {
@@ -617,10 +688,25 @@ async function renderHomePanel() {
     }
   }
 
+  const reminderHtml = dueEvents
+    .map(
+      (e) => `
+      <div class="reminder-banner">
+        <div class="reminder-text">
+          ${e.event_type === "match" ? "⚽" : "🏋️"} You have a
+          <strong>${e.event_type === "match" ? "Match" : "Practice"}</strong> today${e.opponent ? ` vs ${e.opponent}` : ""} — log your stats.
+        </div>
+        <button type="button" class="reminder-log-btn" id="reminder-log-btn-${e.id}">Log Stats</button>
+      </div>
+      <div class="reminder-form hidden" id="reminder-form-${e.id}"></div>`
+    )
+    .join("");
+
   panel.innerHTML = `
     <div class="category home-greeting">
       <h2>Welcome back, ${currentUsername}!</h2>
       <p class="subtitle">Here's a snapshot of what you've logged so far.</p>
+      ${reminderHtml}
     </div>
     <div class="category">
       <h3>Your Stats Breakdown</h3>
@@ -631,6 +717,12 @@ async function renderHomePanel() {
       ${growthHtml}
     </div>
   `;
+
+  dueEvents.forEach((e) => {
+    const logBtn = document.getElementById(`reminder-log-btn-${e.id}`);
+    const formContainer = document.getElementById(`reminder-form-${e.id}`);
+    wireGameLogToggle(logBtn, formContainer, e.id, `reminder-${e.id}`, renderHomePanel);
+  });
 }
 
 // ---------- Your Stats tab ----------
@@ -749,6 +841,179 @@ async function loadStatHistory() {
       </tbody>
     </table>
   `;
+}
+
+// ---------- Calendar tab ----------
+
+let calendarViewDate = null;
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function ymd(y, m, d) {
+  return `${y}-${pad2(m + 1)}-${pad2(d)}`;
+}
+
+async function renderCalendarPanel() {
+  const panel = document.getElementById("tab-calendar");
+  const now = new Date();
+  if (!calendarViewDate) calendarViewDate = { year: now.getFullYear(), month: now.getMonth() };
+  const todayYmd = ymd(now.getFullYear(), now.getMonth(), now.getDate());
+
+  panel.innerHTML = `
+    <div class="category">
+      <div class="calendar-header">
+        <button type="button" id="cal-prev">&larr;</button>
+        <h3 id="cal-month-label"></h3>
+        <button type="button" id="cal-next">&rarr;</button>
+      </div>
+      <div class="calendar-grid" id="cal-grid"></div>
+    </div>
+    <div class="category" id="cal-day-panel"></div>
+  `;
+
+  document.getElementById("cal-prev").addEventListener("click", () => {
+    calendarViewDate.month -= 1;
+    if (calendarViewDate.month < 0) {
+      calendarViewDate.month = 11;
+      calendarViewDate.year -= 1;
+    }
+    renderCalendarPanel();
+  });
+  document.getElementById("cal-next").addEventListener("click", () => {
+    calendarViewDate.month += 1;
+    if (calendarViewDate.month > 11) {
+      calendarViewDate.month = 0;
+      calendarViewDate.year += 1;
+    }
+    renderCalendarPanel();
+  });
+
+  const res = await fetch("/api/events/me");
+  const data = await res.json();
+  const eventsByDate = {};
+  (data.events || []).forEach((e) => {
+    (eventsByDate[e.event_date] = eventsByDate[e.event_date] || []).push(e);
+  });
+
+  const { year, month } = calendarViewDate;
+  document.getElementById("cal-month-label").textContent = new Date(year, month, 1).toLocaleString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const grid = document.getElementById("cal-grid");
+  grid.innerHTML = `
+    ${["S", "M", "T", "W", "T", "F", "S"].map((n) => `<div class="cal-dow">${n}</div>`).join("")}
+    ${cells
+      .map((d) => {
+        if (!d) return `<div class="cal-cell empty"></div>`;
+        const ds = ymd(year, month, d);
+        const dots = (eventsByDate[ds] || [])
+          .map((e) => `<span class="cal-dot ${e.event_type}"></span>`)
+          .join("");
+        return `<div class="cal-cell${ds === todayYmd ? " today" : ""}" data-date="${ds}">
+          <span class="cal-day-num">${d}</span><span class="cal-dots">${dots}</span>
+        </div>`;
+      })
+      .join("")}
+  `;
+
+  grid.querySelectorAll(".cal-cell[data-date]").forEach((cell) => {
+    cell.addEventListener("click", () => renderCalendarDayPanel(cell.dataset.date, eventsByDate[cell.dataset.date] || []));
+  });
+
+  renderCalendarDayPanel(todayYmd, eventsByDate[todayYmd] || []);
+}
+
+function renderCalendarDayPanel(dateStr, dayEvents) {
+  const panel = document.getElementById("cal-day-panel");
+  panel.innerHTML = `
+    <h3>${new Date(`${dateStr}T00:00:00`).toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    })}</h3>
+    <div id="cal-day-events"></div>
+    <div class="stat-form">
+      <label>Type
+        <select id="cal-new-type">
+          <option value="match">Match</option>
+          <option value="practice">Practice</option>
+        </select>
+      </label>
+      <label>Opponent (optional)
+        <input type="text" id="cal-new-opponent" placeholder="e.g. Riverdale HS" />
+      </label>
+      <button type="button" id="cal-new-save">Add to Calendar</button>
+    </div>
+    <div id="cal-new-msg" class="message hidden"></div>
+  `;
+
+  renderCalendarDayEvents(dayEvents);
+
+  document.getElementById("cal-new-save").addEventListener("click", async () => {
+    const event_type = document.getElementById("cal-new-type").value;
+    const opponent = document.getElementById("cal-new-opponent").value.trim();
+    const res = await fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_date: dateStr, event_type, opponent }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msgEl = document.getElementById("cal-new-msg");
+      msgEl.textContent = data.error || "Could not add.";
+      msgEl.classList.remove("hidden");
+      return;
+    }
+    renderCalendarPanel();
+  });
+}
+
+function renderCalendarDayEvents(dayEvents) {
+  const container = document.getElementById("cal-day-events");
+  if (!dayEvents.length) {
+    container.innerHTML = `<p class="empty-note">Nothing scheduled for this day yet.</p>`;
+    return;
+  }
+
+  container.innerHTML = dayEvents
+    .map(
+      (e) => `
+    <div class="cal-event-row">
+      <div>
+        <span class="badge ${e.event_type}">${e.event_type}</span>
+        ${e.opponent ? `vs ${e.opponent}` : ""}
+        ${e.logged ? `<span class="cal-logged">&#10003; logged</span>` : ""}
+      </div>
+      <div class="cal-event-actions">
+        ${e.logged ? "" : `<button type="button" id="cal-log-btn-${e.id}">Log Stats</button>`}
+        <button type="button" id="cal-del-btn-${e.id}">Delete</button>
+      </div>
+      <div class="reminder-form hidden" id="cal-log-form-${e.id}"></div>
+    </div>`
+    )
+    .join("");
+
+  dayEvents.forEach((e) => {
+    document.getElementById(`cal-del-btn-${e.id}`).addEventListener("click", async () => {
+      await fetch(`/api/events/${e.id}`, { method: "DELETE" });
+      renderCalendarPanel();
+    });
+    if (!e.logged) {
+      const logBtn = document.getElementById(`cal-log-btn-${e.id}`);
+      const formContainer = document.getElementById(`cal-log-form-${e.id}`);
+      wireGameLogToggle(logBtn, formContainer, e.id, `cal-${e.id}`, renderCalendarPanel);
+    }
+  });
 }
 
 // ---------- Leaderboard tab ----------
