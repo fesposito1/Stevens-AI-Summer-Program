@@ -333,7 +333,7 @@ function renderTeamDetailInto(container, data) {
 }
 
 function renderPlayerDetailInto(container, data) {
-  const { info, last_events, next_events } = data;
+  const { info, next_events } = data;
 
   container.innerHTML = `
     ${backLinkHtml()}
@@ -354,11 +354,6 @@ function renderPlayerDetailInto(container, data) {
       </p>
       ${info.height || info.weight ? `<p><strong>Height:</strong> ${info.height || "-"} &nbsp; <strong>Weight:</strong> ${info.weight || "-"}</p>` : ""}
       <div class="description-scroll"><p class="description">${info.description || ""}</p></div>
-    </div>
-
-    <div class="category">
-      <h3>Team's Recent Results</h3>
-      ${eventsTable(last_events, true)}
     </div>
 
     <div class="category">
