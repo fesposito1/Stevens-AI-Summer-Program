@@ -199,6 +199,13 @@ main {
   font-size: 0.9rem;
   line-height: 1.5;
   white-space: pre-line;
+  margin: 0;
+}
+
+.description-scroll {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 0.4rem;
 }
 
 table {

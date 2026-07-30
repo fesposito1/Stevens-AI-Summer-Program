@@ -238,7 +238,7 @@ function renderTeamDetailInto(container, data) {
       <h3>Overview</h3>
       <p><strong>Stadium:</strong> ${info.stadium || "-"} &nbsp; <strong>Formed:</strong> ${info.formed || "-"}</p>
       ${info.website ? `<p><strong>Website:</strong> ${info.website}</p>` : ""}
-      <p class="description">${info.description ? info.description.slice(0, 600) + (info.description.length > 600 ? "..." : "") : ""}</p>
+      <div class="description-scroll"><p class="description">${info.description || ""}</p></div>
     </div>
 
     <div class="category">
@@ -284,7 +284,7 @@ function renderPlayerDetailInto(container, data) {
         <strong>Status:</strong> ${info.status || "-"}
       </p>
       ${info.height || info.weight ? `<p><strong>Height:</strong> ${info.height || "-"} &nbsp; <strong>Weight:</strong> ${info.weight || "-"}</p>` : ""}
-      <p class="description">${info.description ? info.description.slice(0, 600) + (info.description.length > 600 ? "..." : "") : ""}</p>
+      <div class="description-scroll"><p class="description">${info.description || ""}</p></div>
     </div>
 
     <div class="category">
@@ -309,17 +309,49 @@ function renderFullDetail(container, item, data, onBack) {
   document.getElementById("back-link").addEventListener("click", onBack);
 }
 
+const API_SPORT_TO_METRICS_SPORT = {
+  Soccer: "Soccer",
+  Basketball: "Basketball",
+  "American Football": "Football",
+  "Ice Hockey": "Hockey",
+  Baseball: "Baseball",
+  Golf: "Golf",
+  Tennis: "Tennis",
+  Fighting: "MMA/Boxing",
+  Athletics: "Running",
+  "Track and Field": "Running",
+};
+
+function mapApiSportToMetricsSport(apiSport) {
+  if (!apiSport) return null;
+  if (API_SPORT_TO_METRICS_SPORT[apiSport]) return API_SPORT_TO_METRICS_SPORT[apiSport];
+  if (gameMetricKeysBySport[apiSport]) return apiSport;
+  return null;
+}
+
 async function renderCompareDetail(container, item, data, onBack) {
   const info = data.info;
+  const mappedSport = mapApiSportToMetricsSport(info.sport);
+  const skillKeys = mappedSport ? gameMetricKeysBySport[mappedSport] || [] : [];
+  const skillMetrics = mappedSport
+    ? (metricsCatalog[mappedSport] || []).filter((m) => skillKeys.includes(m.key))
+    : [];
 
   const statsRes = await fetch("/api/stats/me");
   const statsData = await statsRes.json();
-  const bio = {};
+  const latest = {};
   (statsData.stats || []).forEach((s) => {
-    if (s.sport === "Bio" && !(s.metric_key in bio)) {
-      bio[s.metric_key] = s.value;
-    }
+    const key = `${s.sport}|${s.metric_key}`;
+    if (!(key in latest)) latest[key] = s.value;
   });
+
+  const hasSkills = mappedSport && skillMetrics.length > 0;
+  const skillInputsHtml = skillMetrics
+    .map((m) => {
+      const prefill = latest[`${mappedSport}|${m.key}`];
+      return `<label>${m.label}${m.unit ? ` (${m.unit})` : ""}<input type="number" step="any" id="cmp-${m.key}" value="${prefill ?? ""}" placeholder="e.g. 0" /></label>`;
+    })
+    .join("");
 
   container.innerHTML = `
     ${backLinkHtml()}
@@ -332,50 +364,48 @@ async function renderCompareDetail(container, item, data, onBack) {
     </div>
 
     <div class="category">
-      <h3>Compare Your Bio Stats</h3>
-      <div class="compare-form">
-        <label>Height (cm)<input type="number" id="cmp-height" value="${bio.height_cm ?? ""}" placeholder="e.g. 180" /></label>
-        <label>Weight (kg)<input type="number" id="cmp-weight" value="${bio.weight_kg ?? ""}" placeholder="e.g. 75" /></label>
-        <label>Age (years)<input type="number" id="cmp-age" value="${bio.age ?? ""}" placeholder="e.g. 25" /></label>
-      </div>
-      <div class="compare-form">
-        <button type="button" id="cmp-btn">Compare</button>
-        <button type="button" id="cmp-save-btn">Save as My Bio Stats</button>
-      </div>
-      <p class="empty-note">${
-        Object.keys(bio).length
-          ? "Prefilled from your last saved Your Stats entries."
-          : "No saved Bio stats yet — log some in Your Stats, or just type values below."
-      }</p>
-      <div id="cmp-save-msg" class="empty-note hidden"></div>
-      <div id="cmp-result"></div>
+      <h3>${hasSkills ? `Compare Your ${mappedSport} Skills` : "Compare"}</h3>
+      ${
+        hasSkills
+          ? `
+        <div class="compare-form">${skillInputsHtml}</div>
+        <div class="compare-form">
+          <button type="button" id="cmp-btn">Compare</button>
+          <button type="button" id="cmp-save-btn">Save to My Stats</button>
+        </div>
+        <p class="empty-note">
+          Your values are prefilled from your latest logged stats. TheSportsDB's free tier doesn't
+          include ${info.name}'s personal game stats, so their side will note that instead of a
+          made-up number.
+        </p>
+        <div id="cmp-save-msg" class="empty-note hidden"></div>
+        <div id="cmp-result"></div>
+      `
+          : `<p class="empty-note">No skill stats are configured for ${info.sport || "this sport"} yet.</p>`
+      }
     </div>
   `;
   container.classList.remove("hidden");
   document.getElementById("back-link").addEventListener("click", onBack);
 
+  if (!hasSkills) return;
+
   function runCompare() {
-    const you = {
-      height: parseFloat(document.getElementById("cmp-height").value),
-      weight: parseFloat(document.getElementById("cmp-weight").value),
-      age: parseFloat(document.getElementById("cmp-age").value),
-    };
-    const rows = [
-      compareRow("Height", you.height, info.height_cm, " cm", info.name),
-      compareRow("Weight", you.weight, info.weight_kg, " kg", info.name),
-      compareRow("Age", you.age, info.age, " yrs", info.name),
-    ].join("");
+    const rows = skillMetrics
+      .map((m) => {
+        const youVal = parseFloat(document.getElementById(`cmp-${m.key}`).value);
+        return compareRow(m.label, youVal, null, m.unit ? ` ${m.unit}` : "", info.name);
+      })
+      .join("");
     document.getElementById("cmp-result").innerHTML = rows;
   }
 
   document.getElementById("cmp-btn").addEventListener("click", runCompare);
 
   document.getElementById("cmp-save-btn").addEventListener("click", async () => {
-    const entries = [
-      { sport: "Bio", metric_key: "height_cm", value: document.getElementById("cmp-height").value },
-      { sport: "Bio", metric_key: "weight_kg", value: document.getElementById("cmp-weight").value },
-      { sport: "Bio", metric_key: "age", value: document.getElementById("cmp-age").value },
-    ].filter((e) => e.value !== "");
+    const entries = skillMetrics
+      .map((m) => ({ sport: mappedSport, metric_key: m.key, value: document.getElementById(`cmp-${m.key}`).value }))
+      .filter((e) => e.value !== "");
 
     for (const entry of entries) {
       await fetch("/api/stats", {
@@ -391,7 +421,7 @@ async function renderCompareDetail(container, item, data, onBack) {
     setTimeout(() => msg.classList.add("hidden"), 2500);
   });
 
-  if (bio.height_cm !== undefined || bio.weight_kg !== undefined || bio.age !== undefined) {
+  if (skillMetrics.some((m) => latest[`${mappedSport}|${m.key}`] !== undefined)) {
     runCompare();
   }
 }
@@ -419,6 +449,7 @@ function setupSearchWidget({ formId, inputId, resultsId, detailId, messageId, ty
     event.preventDefault();
     const query = input.value.trim();
     if (!query) return;
+    input.value = "";
 
     clearEl(detailEl);
     clearEl(resultsEl);
