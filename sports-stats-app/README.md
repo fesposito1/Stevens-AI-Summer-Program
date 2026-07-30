@@ -57,8 +57,12 @@ dist/                Built standalone .exe (generated, not meant to be hand-edit
 - **Leaderboard** — for any sport + metric that at least one user has logged, ranks all users by
   their latest value (lower-is-better metrics like times rank ascending, higher-is-better metrics
   like bench press rank descending).
-- **Projections** — pick a metric you've logged at least twice (spanning at least a day), and see
-  a simple linear-trend projection for 30/90/365 days out, with a small sparkline of your history.
+- **Projections** — pick a metric you've logged at least twice (spanning at least a day). The
+  trend is a weighted regression (entries logged with more rest days count more, since a fatigued
+  measurement is a noisier read on your true current level), adjusted by a heuristic age factor
+  (from your logged Bio age, if any), then projected forward with a diminishing-returns curve that
+  levels off over time instead of extending in a straight line — 30/90/365-day estimates, plus a
+  sparkline of your history.
 
 ## Data & storage
 
@@ -74,8 +78,10 @@ dist/                Built standalone .exe (generated, not meant to be hand-edit
   standings — it does not include deep box-score stats (points per game, etc.). That's why
   personal performance metrics (mile time, vertical jump, etc.) are self-logged by users rather
   than pulled from the API.
-- Projections are a simple linear regression over your own logged history — a fun estimate, not
-  a scientific prediction.
+- Projections use a rest-day-weighted, age-adjusted, diminishing-returns model over your own
+  logged history — a heuristic estimate, not a physiological/scientific prediction.
 - Colors are set via CSS custom properties at the top of `static/style.css` (`--bg`, `--text`,
   `--accent`, etc.) — the app currently uses a fixed light-blue/dark-blue palette regardless of
   OS theme.
+- The login screen has scattered sport emoji decorations (soccer, basketball, football, baseball,
+  tennis, hockey, golf, boxing) behind the auth box, styled via `.sports-decor` in `style.css`.

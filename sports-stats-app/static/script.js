@@ -564,8 +564,12 @@ function renderYourStats() {
         <label>Value
           <input type="number" step="any" id="stat-value" placeholder="e.g. 420" />
         </label>
+        <label>Rest days since last session
+          <input type="number" step="any" min="0" id="stat-rest-days" placeholder="0" />
+        </label>
         <button type="button" id="stat-save-btn">Log Entry</button>
       </div>
+      <p class="empty-note">Rest days help Projections tell a well-rested measurement from a fatigued one.</p>
       <div id="stat-message" class="message hidden"></div>
     </div>
     <div class="category">
@@ -590,6 +594,7 @@ function renderYourStats() {
     const sport = sportSelect.value;
     const metric_key = metricSelect.value;
     const value = document.getElementById("stat-value").value;
+    const rest_days = document.getElementById("stat-rest-days").value;
 
     if (value === "") {
       showStatMessage("Enter a value first.");
@@ -599,7 +604,7 @@ function renderYourStats() {
     const res = await fetch("/api/stats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sport, metric_key, value }),
+      body: JSON.stringify({ sport, metric_key, value, rest_days }),
     });
     const data = await res.json();
 
@@ -609,6 +614,7 @@ function renderYourStats() {
     }
 
     document.getElementById("stat-value").value = "";
+    document.getElementById("stat-rest-days").value = "";
     showStatMessage("Saved!");
     loadStatHistory();
   });
@@ -635,7 +641,7 @@ async function loadStatHistory() {
 
   container.innerHTML = `
     <table>
-      <thead><tr><th>Date</th><th>Sport</th><th>Metric</th><th>Value</th></tr></thead>
+      <thead><tr><th>Date</th><th>Sport</th><th>Metric</th><th>Value</th><th>Rest Days</th></tr></thead>
       <tbody>
         ${data.stats
           .map(
@@ -645,6 +651,7 @@ async function loadStatHistory() {
             <td>${s.sport}</td>
             <td>${s.label}</td>
             <td>${s.value}${s.unit ? " " + s.unit : ""}</td>
+            <td>${s.rest_days ?? 0}</td>
           </tr>
         `
           )
@@ -764,11 +771,14 @@ async function renderProjectionsPanel() {
       return;
     }
 
-    const { metric, history, trend_per_day, projections } = data;
+    const { metric, history, trend_per_day, adjusted_trend_per_day, age_used, age_factor, model_note, projections } = data;
     const trendDir = trend_per_day === 0 ? "flat" : trend_per_day > 0 ? "increasing" : "decreasing";
 
     container.innerHTML = `
-      <p><strong>Trend:</strong> ${trendDir} by ${Math.abs(trend_per_day)}${metric.unit}/day</p>
+      <p><strong>Raw trend:</strong> ${trendDir} by ${Math.abs(trend_per_day)}${metric.unit}/day (rest-day weighted)</p>
+      <p><strong>Age-adjusted trend:</strong> ${Math.abs(adjusted_trend_per_day)}${metric.unit}/day
+        ${age_used !== null && age_used !== undefined ? `(using your logged age of ${age_used}, factor ${age_factor}x)` : `(no logged age found — factor ${age_factor}x)`}
+      </p>
       ${sparkline(history)}
       <table>
         <thead><tr><th>In</th><th>Projected ${metric.label}</th></tr></thead>
@@ -780,7 +790,7 @@ async function renderProjectionsPanel() {
             .join("")}
         </tbody>
       </table>
-      <p class="empty-note">Simple linear trend from your own logged history — a fun estimate, not a scientific prediction.</p>
+      <p class="empty-note">${model_note}</p>
     `;
   }
 
