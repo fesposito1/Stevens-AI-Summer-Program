@@ -234,7 +234,9 @@ def signup():
     if db.get_user_by_username(username):
         return jsonify({"error": "That username is already taken."}), 409
 
-    user_id = db.create_user(username, generate_password_hash(password), datetime.now().isoformat())
+    user_id = db.create_user(
+        username, generate_password_hash(password, method="pbkdf2:sha256"), datetime.now().isoformat()
+    )
     session.permanent = True
     session["user_id"] = user_id
     session["username"] = username
