@@ -39,7 +39,7 @@ metrics.py           Catalog of loggable metrics per sport (key, label, unit, hi
 templates/index.html Single-page HTML shell the frontend renders into
 static/script.js     Frontend logic — tabs, search, compare, leaderboard, projections, sparkline
 static/style.css     App styling (CSS custom properties for colors, layout, components)
-requirements.txt     Python dependencies (Flask, requests, pywebview)
+requirements.txt     Python dependencies (Flask, requests, pywebview, google-generativeai)
 dist/                Built standalone .exe (generated, not meant to be hand-edited)
 ```
 
@@ -63,6 +63,29 @@ dist/                Built standalone .exe (generated, not meant to be hand-edit
   (from your logged Bio age, if any), then projected forward with a diminishing-returns curve that
   levels off over time instead of extending in a straight line — 30/90/365-day estimates, plus a
   sparkline of your history.
+- **AI Coach** — a free-form chat coach (Google Gemini) that gives advice based on your actual
+  logged stats. Not scripted/pre-programmed responses — see "AI Coach setup" below to enable it.
+
+## AI Coach setup
+
+The Coach tab calls Google's **Gemini API free tier** — no cost, no credit card, but each person
+running the app needs their own personal API key (keys are never shared or synced):
+
+1. Go to [aistudio.google.com](https://aistudio.google.com), sign in, and generate a free API key.
+2. Give it to the app one of two ways:
+   - Set it as an environment variable named `GEMINI_API_KEY`, **or**
+   - Save it as plain text (no quotes, just the key) to
+     `%LOCALAPPDATA%\SportsStatsApp\gemini_api_key.txt`
+3. Restart the app. The Coach tab will now work; without a key it shows a setup reminder instead
+   of erroring.
+
+Nothing about this key is committed to the repo or bundled into the `.exe` — it only lives on
+each person's own machine.
+
+If the Coach ever errors with a `429 quota exceeded, limit: 0` message, the model name in
+`app.py` (`GEMINI_MODEL`) has likely been retired from the free tier — Google rotates which
+models get free quota. Swap it for whatever `gemini-*-latest` alias is current at
+[aistudio.google.com](https://aistudio.google.com).
 
 ## Data & storage
 

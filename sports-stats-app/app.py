@@ -8,6 +8,7 @@ import re
 import sys
 import time
 
+import google.generativeai as genai
 import requests
 import webview
 from flask import Flask, jsonify, render_template, request, session
@@ -49,6 +50,12 @@ REQUEST_TIMEOUT = 10
 _cache = {}
 _cache_lock = Lock()
 CACHE_TTL_SECONDS = 300
+
+# AI Coach — Google Gemini, free tier, no shared key needed (each user brings their own)
+GEMINI_MODEL = "gemini-flash-latest"
+COACH_COOLDOWN_SECONDS = 2.0
+_coach_last_call = {}
+_coach_lock = Lock()
 
 
 class RateLimitError(Exception):
@@ -190,6 +197,32 @@ def get_latest_bio_age(user_id):
     if not rows:
         return None
     return rows[-1]["value"]
+
+
+def gemini_key_path():
+    return os.path.join(db.data_dir(), "gemini_api_key.txt")
+
+
+def get_gemini_api_key():
+    key = os.environ.get("GEMINI_API_KEY")
+    if key and key.strip():
+        return key.strip()
+    path = gemini_key_path()
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            key = f.read().strip()
+        return key or None
+    return None
+
+
+def build_coach_context(stats):
+    if not stats:
+        return "This athlete hasn't logged any stats yet — encourage them to log some in Your Stats."
+    lines = [
+        f"- {s['sport']} / {s['label']}: {s['value']}{s['unit']} (logged {s['recorded_at'][:10]})"
+        for s in stats[:30]
+    ]
+    return "Recently logged stats (most recent first):\n" + "\n".join(lines)
 
 
 def team_summary(team):
@@ -396,6 +429,67 @@ def projections_me():
         ),
         "projections": projections,
     })
+
+
+# ---------- AI Coach ----------
+
+@app.route("/api/coach/chat", methods=["POST"])
+@login_required
+def coach_chat():
+    payload = request.get_json(silent=True) or {}
+    message = (payload.get("message") or "").strip()
+    history = payload.get("history") or []
+
+    if not message:
+        return jsonify({"error": "Message is required."}), 400
+
+    api_key = get_gemini_api_key()
+    if not api_key:
+        return jsonify({
+            "error": (
+                "AI Coach isn't set up yet. Get a free API key at aistudio.google.com, "
+                "then either set it as the GEMINI_API_KEY environment variable or save it "
+                f"as plain text to {gemini_key_path()}"
+            )
+        }), 503
+
+    user_id = session["user_id"]
+    with _coach_lock:
+        now = time.time()
+        if now - _coach_last_call.get(user_id, 0) < COACH_COOLDOWN_SECONDS:
+            return jsonify({"error": "Slow down a bit before sending another message."}), 429
+        _coach_last_call[user_id] = now
+
+    context_summary = build_coach_context(db.get_stats_for_user(user_id))
+    gemini_history = [
+        {"role": "user" if h.get("role") == "user" else "model", "parts": [str(h.get("content") or "")]}
+        for h in history[-20:]
+        if h.get("content")
+    ]
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(
+            GEMINI_MODEL,
+            system_instruction=(
+                "You are an encouraging, knowledgeable sports performance coach embedded in a "
+                "stats-tracking app. Give specific, actionable advice based on the athlete's own "
+                "logged stats below — reference real numbers when relevant. Keep replies "
+                "conversational and concise (roughly 3-6 sentences) unless asked for more detail. "
+                "You are not a doctor; suggest consulting one for injury or medical concerns.\n\n"
+                + context_summary
+            ),
+        )
+        chat = model.start_chat(history=gemini_history)
+        response = chat.send_message(message)
+        reply = (response.text or "").strip()
+    except Exception as exc:
+        return jsonify({"error": f"Coach request failed: {exc}"}), 502
+
+    if not reply:
+        return jsonify({"error": "Coach didn't return a response — try rephrasing."}), 502
+
+    return jsonify({"reply": reply})
 
 
 # ---------- TheSportsDB lookups ----------
