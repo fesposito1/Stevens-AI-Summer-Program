@@ -14,7 +14,33 @@ async function init() {
   await loadMetricsCatalog();
   setupAuthUI();
   setupTabUI();
+  setupAvatarMenu();
   await checkAuth();
+}
+
+// ---------- Avatar dropdown ----------
+
+function setupAvatarMenu() {
+  const btn = document.getElementById("avatar-btn");
+  const dropdown = document.getElementById("avatar-dropdown");
+
+  function closeMenu() {
+    dropdown.classList.add("hidden");
+    btn.setAttribute("aria-expanded", "false");
+  }
+
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const willOpen = dropdown.classList.contains("hidden");
+    dropdown.classList.toggle("hidden", !willOpen);
+    btn.setAttribute("aria-expanded", String(willOpen));
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!dropdown.classList.contains("hidden") && !event.target.closest(".avatar-menu")) {
+      closeMenu();
+    }
+  });
 }
 
 async function loadMetricsCatalog() {
@@ -165,6 +191,7 @@ function showApp(username, isAdmin) {
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("current-username").textContent = username;
+  document.getElementById("avatar-btn").textContent = username.charAt(0).toUpperCase();
   document.getElementById("admin-tab-btn").classList.toggle("hidden", !currentIsAdmin);
   activateTab("home");
 }
@@ -741,7 +768,7 @@ function wireGameLogToggle(logBtn, formContainer, eventId, prefix, sport, onSave
 
 // ---------- Home tab ----------
 
-const PIE_COLORS = ["#14458f", "#2f7dc4", "#5aa9e6", "#8fd0f7", "#0a2f6b", "#3a5a8a", "#7ec8e3", "#1e6fb8"];
+const PIE_COLORS = ["#2563EB", "#22C55E", "#F59E0B", "#8B5CF6", "#06B6D4", "#EC4899", "#64748B", "#0F172A"];
 
 function renderPieChart(slices) {
   const total = slices.reduce((sum, s) => sum + s.value, 0);
@@ -835,7 +862,14 @@ async function renderHomePanel() {
     .filter(([, v]) => v.count >= 2)
     .sort((a, b) => b[1].count - a[1].count);
 
-  let growthHtml = `<p class="empty-note">Log at least 2 entries for the same metric in Your Stats to see a growth trend here.</p>`;
+  let growthHtml = `
+    <div class="analytics-grid">
+      <div class="analytics-card"><div class="analytics-label">Weekly Progress</div><div class="skeleton skeleton-text"></div></div>
+      <div class="analytics-card"><div class="analytics-label">Consistency</div><div class="skeleton skeleton-text"></div></div>
+      <div class="analytics-card"><div class="analytics-label">Average Rating</div><div class="skeleton skeleton-text"></div></div>
+    </div>
+    <p class="empty-note" style="margin-top: 0.9rem;">Log at least 2 entries for the same metric in Your Stats to see a growth trend here.</p>
+  `;
   if (eligible.length > 0) {
     const [topKey, topMeta] = eligible[0];
     const projRes = await fetch(`/api/projections/me?metric_key=${encodeURIComponent(topKey)}`);
@@ -849,19 +883,24 @@ async function renderHomePanel() {
     }
   }
 
-  const reminderHtml = dueEvents
-    .map(
-      (e) => `
-      <div class="reminder-banner">
-        <div class="reminder-text">
-          ${e.event_type === "match" ? "⚽" : "🏋️"} You have a
-          ${e.sport} <strong>${e.event_type === "match" ? "Match" : "Practice"}</strong> today${e.event_time ? ` at ${formatEventTime(e.event_time)}` : ""}${e.opponent ? ` vs ${e.opponent}` : ""} — log your stats.
+  const eventsHtml = dueEvents.length
+    ? `<div class="event-card-grid">${dueEvents
+        .map(
+          (e) => `
+      <div>
+        <div class="event-card">
+          <div class="event-card-icon">${e.event_type === "match" ? "⚽" : "🏋️"}</div>
+          <div class="event-card-body">
+            <div class="event-card-title">${e.sport} ${e.event_type === "match" ? "Match" : "Practice"}</div>
+            <div class="event-card-meta">Today${e.event_time ? ` • ${formatEventTime(e.event_time)}` : ""}${e.opponent ? ` • vs ${e.opponent}` : ""}</div>
+          </div>
+          <button type="button" class="event-card-action" id="reminder-log-btn-${e.id}">Log Stats &rarr;</button>
         </div>
-        <button type="button" class="reminder-log-btn" id="reminder-log-btn-${e.id}">Log Stats</button>
-      </div>
-      <div class="reminder-form hidden" id="reminder-form-${e.id}"></div>`
-    )
-    .join("");
+        <div class="reminder-form hidden" id="reminder-form-${e.id}"></div>
+      </div>`
+        )
+        .join("")}</div>`
+    : `<p class="empty-note">Nothing scheduled for today — enjoy the rest day.</p>`;
 
   const followedHtml = followed.length
     ? `<div class="followed-grid">${followed
@@ -879,11 +918,30 @@ async function renderHomePanel() {
         .join("")}</div>`
     : `<p class="empty-note">You're not following anyone yet — find a player in Player Stats and hit Follow.</p>`;
 
+  const statsHtml = slices.length
+    ? renderPieChart(slices)
+    : `
+      <div class="empty-state">
+        <svg class="empty-state-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19V5" /><path d="M4 19h16" /><path d="M8 15l3-4 3 2 4-6" />
+        </svg>
+        <div class="empty-state-title">No stats yet</div>
+        <p class="empty-state-subtitle">Log your first session to start tracking your progress.</p>
+        <button type="button" id="home-add-first-stat-btn">Add First Stat</button>
+      </div>
+    `;
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
   panel.innerHTML = `
     <div class="category home-greeting">
-      <h2>Welcome back, ${currentUsername}!</h2>
-      <p class="subtitle">Here's a snapshot of what you've logged so far.</p>
-      ${reminderHtml}
+      <h2>${greeting}, ${currentUsername} &#128075;</h2>
+      <p class="subtitle">Here's today's activity.</p>
+    </div>
+    <div class="category">
+      <h3>Today's Events</h3>
+      ${eventsHtml}
     </div>
     <div class="category">
       <h3>Players You Follow</h3>
@@ -891,13 +949,18 @@ async function renderHomePanel() {
     </div>
     <div class="category">
       <h3>Your Stats Breakdown</h3>
-      ${slices.length ? renderPieChart(slices) : `<p class="empty-note">No stats logged yet — head to Your Stats to log your first entry.</p>`}
+      ${statsHtml}
     </div>
     <div class="category">
       <h3>Growth</h3>
       ${growthHtml}
     </div>
   `;
+
+  const addFirstStatBtn = document.getElementById("home-add-first-stat-btn");
+  if (addFirstStatBtn) {
+    addFirstStatBtn.addEventListener("click", () => activateTab("your-stats"));
+  }
 
   panel.querySelectorAll(".followed-card").forEach((card) => {
     card.addEventListener("click", (event) => {
@@ -1389,7 +1452,7 @@ function sparkline(history) {
 
   return `
     <svg width="${width}" height="${height}" class="sparkline" viewBox="0 0 ${width} ${height}">
-      <polyline points="${points}" fill="none" stroke="#4f8cff" stroke-width="2" />
+      <polyline points="${points}" fill="none" stroke="#2563EB" stroke-width="2" />
     </svg>
   `;
 }
