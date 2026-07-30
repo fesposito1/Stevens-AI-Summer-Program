@@ -410,6 +410,49 @@ th {
   outline: 2px solid var(--accent);
 }
 
+.auth-link {
+  color: var(--accent);
+  font-size: 0.85rem;
+  text-decoration: none;
+  align-self: center;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
+.auth-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+  text-align: left;
+}
+
+/* ---------- Admin panel ---------- */
+
+.admin-prompt-textarea {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 0.8rem;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.admin-actions button {
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+}
+
 /* ---------- App shell ---------- */
 
 .app-header {

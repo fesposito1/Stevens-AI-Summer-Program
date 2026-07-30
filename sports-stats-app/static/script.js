@@ -1,5 +1,11 @@
 let metricsCatalog = {};
 let currentUsername = null;
+let currentIsAdmin = false;
+
+const ALL_TAB_IDS = [
+  "tab-home", "tab-your-stats", "tab-player-stats", "tab-compare",
+  "tab-leaderboard", "tab-projections", "tab-coach", "tab-admin",
+];
 
 window.addEventListener("DOMContentLoaded", init);
 
@@ -20,7 +26,7 @@ async function checkAuth() {
   const res = await fetch("/api/auth/me");
   const data = await res.json();
   if (data.username) {
-    showApp(data.username);
+    showApp(data.username, data.is_admin);
   } else {
     showAuthScreen();
   }
@@ -28,17 +34,36 @@ async function checkAuth() {
 
 // ---------- Auth screen ----------
 
+function showAuthPanel(name) {
+  document.getElementById("login-form").classList.toggle("hidden", name !== "login");
+  document.getElementById("signup-form").classList.toggle("hidden", name !== "signup");
+  document.getElementById("forgot-username-form").classList.toggle("hidden", name !== "forgot-username");
+  document.getElementById("forgot-reset-form").classList.toggle("hidden", name !== "forgot-reset");
+  showAuthMessage("");
+}
+
 function setupAuthUI() {
   document.querySelectorAll(".auth-tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
-      const target = btn.dataset.authTab;
-      document.getElementById("login-form").classList.toggle("hidden", target !== "login");
-      document.getElementById("signup-form").classList.toggle("hidden", target !== "signup");
-      showAuthMessage("");
+      showAuthPanel(btn.dataset.authTab);
     });
   });
+
+  document.getElementById("forgot-link").addEventListener("click", (event) => {
+    event.preventDefault();
+    document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.remove("active"));
+    showAuthPanel("forgot-username");
+  });
+
+  function backToLogin(event) {
+    event.preventDefault();
+    document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.authTab === "login"));
+    showAuthPanel("login");
+  }
+  document.getElementById("back-to-login-link").addEventListener("click", backToLogin);
+  document.getElementById("back-to-login-link-2").addEventListener("click", backToLogin);
 
   document.getElementById("login-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -54,30 +79,70 @@ function setupAuthUI() {
       showAuthMessage(data.error || "Login failed.");
       return;
     }
-    showApp(data.username);
+    showApp(data.username, data.is_admin);
   });
 
   document.getElementById("signup-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const username = document.getElementById("signup-username").value.trim();
     const password = document.getElementById("signup-password").value;
+    const security_answer = document.getElementById("signup-security-answer").value.trim();
     const res = await fetch("/api/auth/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, security_answer }),
     });
     const data = await res.json();
     if (!res.ok) {
       showAuthMessage(data.error || "Sign up failed.");
       return;
     }
-    showApp(data.username);
+    showApp(data.username, data.is_admin);
+  });
+
+  document.getElementById("forgot-username-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("forgot-username").value.trim();
+    const res = await fetch("/api/auth/forgot/question", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAuthMessage(data.error || "Couldn't find that account.");
+      return;
+    }
+    document.getElementById("forgot-reset-form").dataset.username = username;
+    document.getElementById("forgot-question-text").textContent = data.question;
+    showAuthPanel("forgot-reset");
+  });
+
+  document.getElementById("forgot-reset-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = event.target.dataset.username;
+    const answer = document.getElementById("forgot-answer").value.trim();
+    const new_password = document.getElementById("forgot-new-password").value;
+    const res = await fetch("/api/auth/forgot/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, answer, new_password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAuthMessage(data.error || "Reset failed.");
+      return;
+    }
+    document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.authTab === "login"));
+    showAuthPanel("login");
+    showAuthMessage("Password reset — log in with your new password.");
   });
 
   document.getElementById("logout-btn").addEventListener("click", async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     currentUsername = null;
-    ["tab-home", "tab-your-stats", "tab-player-stats", "tab-compare", "tab-leaderboard", "tab-projections", "tab-coach"].forEach((id) => {
+    currentIsAdmin = false;
+    ALL_TAB_IDS.forEach((id) => {
       const el = document.getElementById(id);
       el.innerHTML = "";
       delete el.dataset.initialized;
@@ -92,11 +157,13 @@ function showAuthMessage(text) {
   el.classList.toggle("hidden", !text);
 }
 
-function showApp(username) {
+function showApp(username, isAdmin) {
   currentUsername = username;
+  currentIsAdmin = !!isAdmin;
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("current-username").textContent = username;
+  document.getElementById("admin-tab-btn").classList.toggle("hidden", !currentIsAdmin);
   activateTab("home");
 }
 
@@ -114,6 +181,7 @@ function setupTabUI() {
 }
 
 function activateTab(tab) {
+  if (tab === "admin" && !currentIsAdmin) return;
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
 
@@ -124,6 +192,7 @@ function activateTab(tab) {
   if (tab === "leaderboard") renderLeaderboardPanel();
   if (tab === "projections") renderProjectionsPanel();
   if (tab === "coach") renderCoachPanel();
+  if (tab === "admin") renderAdminPanel();
 }
 
 // ---------- Shared detail-rendering helpers ----------
@@ -983,4 +1052,114 @@ function renderCoachPanel() {
       showCoachMessage("Something went wrong reaching the coach.");
     }
   });
+}
+
+// ---------- Admin panel ----------
+
+async function renderAdminPanel() {
+  const panel = document.getElementById("tab-admin");
+
+  panel.innerHTML = `
+    <div class="category">
+      <h3>Users</h3>
+      <div id="admin-message" class="message hidden"></div>
+      <div id="admin-users"></div>
+    </div>
+    <div class="category">
+      <h3>AI Coach Prompt</h3>
+      <p class="empty-note">Edit the system instructions given to the Coach for every conversation.</p>
+      <textarea id="admin-coach-prompt" class="admin-prompt-textarea" rows="6"></textarea>
+      <button type="button" id="admin-save-prompt-btn">Save Prompt</button>
+    </div>
+  `;
+
+  function showAdminMessage(text) {
+    const el = document.getElementById("admin-message");
+    el.textContent = text;
+    el.classList.toggle("hidden", !text);
+    if (text) setTimeout(() => el.classList.add("hidden"), 3000);
+  }
+
+  async function loadUsers() {
+    const res = await fetch("/api/admin/users");
+    const data = await res.json();
+    const container = document.getElementById("admin-users");
+    if (!res.ok) {
+      container.innerHTML = `<p class="empty-note">${data.error || "Couldn't load users."}</p>`;
+      return;
+    }
+    container.innerHTML = `
+      <table>
+        <thead><tr><th>Username</th><th>Admin</th><th>Created</th><th>Last Login</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${data.users.map((u) => `
+            <tr>
+              <td>${u.username}</td>
+              <td>${u.is_admin ? "Yes" : "-"}</td>
+              <td>${new Date(u.created_at).toLocaleString()}</td>
+              <td>${u.last_login ? new Date(u.last_login).toLocaleString() : "Never"}</td>
+              <td class="admin-actions">
+                <button type="button" class="admin-reset-btn" data-id="${u.id}" data-username="${u.username}">Reset Password</button>
+                <button type="button" class="admin-rename-btn" data-id="${u.id}" data-username="${u.username}">Rename</button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+
+    container.querySelectorAll(".admin-reset-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const newPassword = prompt(`New password for ${btn.dataset.username} (min 6 chars):`);
+        if (!newPassword) return;
+        const res = await fetch(`/api/admin/users/${btn.dataset.id}/reset-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_password: newPassword }),
+        });
+        const data = await res.json();
+        showAdminMessage(res.ok ? "Password reset." : data.error || "Failed.");
+      });
+    });
+
+    container.querySelectorAll(".admin-rename-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const newUsername = prompt(`New username for ${btn.dataset.username}:`, btn.dataset.username);
+        if (!newUsername || newUsername === btn.dataset.username) return;
+        const res = await fetch(`/api/admin/users/${btn.dataset.id}/rename`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_username: newUsername }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAdminMessage(data.error || "Failed.");
+          return;
+        }
+        showAdminMessage("Renamed.");
+        if (btn.dataset.username === currentUsername) {
+          currentUsername = newUsername;
+          document.getElementById("current-username").textContent = newUsername;
+        }
+        loadUsers();
+      });
+    });
+  }
+
+  const settingsRes = await fetch("/api/admin/settings");
+  const settingsData = await settingsRes.json();
+  document.getElementById("admin-coach-prompt").value = settingsData.coach_system_prompt || "";
+
+  document.getElementById("admin-save-prompt-btn").addEventListener("click", async () => {
+    const coach_system_prompt = document.getElementById("admin-coach-prompt").value;
+    const res = await fetch("/api/admin/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coach_system_prompt }),
+    });
+    const data = await res.json();
+    showAdminMessage(res.ok ? "Prompt saved." : data.error || "Failed.");
+  });
+
+  loadUsers();
 }

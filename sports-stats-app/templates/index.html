@@ -29,11 +29,26 @@
         <input type="text" id="login-username" placeholder="Username" autocomplete="username" required />
         <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
         <button type="submit">Log In</button>
+        <a href="#" id="forgot-link" class="auth-link">Forgot password?</a>
       </form>
       <form id="signup-form" class="auth-form hidden">
         <input type="text" id="signup-username" placeholder="Username (min 3 chars)" autocomplete="username" required />
         <input type="password" id="signup-password" placeholder="Password (min 6 chars)" autocomplete="new-password" required />
+        <input type="text" id="signup-security-answer" placeholder="What sport do you play or follow most? (for password resets)" required />
         <button type="submit">Create Account</button>
+      </form>
+      <form id="forgot-username-form" class="auth-form hidden">
+        <p class="auth-hint">Enter your username to look up your security question.</p>
+        <input type="text" id="forgot-username" placeholder="Username" autocomplete="username" required />
+        <button type="submit">Next</button>
+        <a href="#" id="back-to-login-link" class="auth-link">Back to login</a>
+      </form>
+      <form id="forgot-reset-form" class="auth-form hidden">
+        <p class="auth-hint" id="forgot-question-text"></p>
+        <input type="text" id="forgot-answer" placeholder="Your answer" required />
+        <input type="password" id="forgot-new-password" placeholder="New password (min 6 chars)" autocomplete="new-password" required />
+        <button type="submit">Reset Password</button>
+        <a href="#" id="back-to-login-link-2" class="auth-link">Back to login</a>
       </form>
       <div id="auth-message" class="message hidden"></div>
     </div>
@@ -56,6 +71,7 @@
       <section id="tab-leaderboard" class="tab-panel"></section>
       <section id="tab-projections" class="tab-panel"></section>
       <section id="tab-coach" class="tab-panel"></section>
+      <section id="tab-admin" class="tab-panel"></section>
     </main>
 
     <nav class="tab-nav">
@@ -79,6 +95,9 @@
       </button>
       <button type="button" class="tab-btn" data-tab="coach">
         <span class="tab-icon">&#129302;</span><span class="tab-label">Coach</span>
+      </button>
+      <button type="button" class="tab-btn hidden" id="admin-tab-btn" data-tab="admin">
+        <span class="tab-icon">&#128274;</span><span class="tab-label">Admin</span>
       </button>
     </nav>
   </div>
