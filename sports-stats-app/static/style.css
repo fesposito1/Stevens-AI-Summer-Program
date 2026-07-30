@@ -1,22 +1,11 @@
 :root {
-  --bg: #0f1216;
-  --panel: #171b21;
-  --border: #2a2f38;
-  --text: #e8eaed;
-  --muted: #9aa3af;
-  --accent: #4f8cff;
+  --bg: #cfe8fb;
+  --panel: #e6f3fc;
+  --border: #a8d2ee;
+  --text: #0a2f6b;
+  --muted: #3a5a8a;
+  --accent: #14458f;
   --card-radius: 10px;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f4f5f7;
-    --panel: #ffffff;
-    --border: #dde1e6;
-    --text: #14171a;
-    --muted: #5b6470;
-    --accent: #2563eb;
-  }
 }
 
 * {
@@ -336,6 +325,8 @@ th {
 /* ---------- Auth screen ---------- */
 
 .auth-screen {
+  position: relative;
+  overflow: hidden;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -343,7 +334,32 @@ th {
   padding: 1.5rem;
 }
 
+.sports-decor {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.sports-decor-item {
+  position: absolute;
+  font-size: 3rem;
+  opacity: 0.28;
+  filter: drop-shadow(0 2px 4px rgba(10, 47, 107, 0.15));
+}
+
+.deco-1 { top: 8%;  left: 10%; font-size: 3.4rem; transform: rotate(-12deg); }
+.deco-2 { top: 14%; right: 9%; font-size: 2.8rem; transform: rotate(10deg); }
+.deco-3 { bottom: 12%; left: 7%; font-size: 3.2rem; transform: rotate(8deg); }
+.deco-4 { bottom: 18%; right: 12%; font-size: 2.6rem; transform: rotate(-14deg); }
+.deco-5 { top: 45%; left: 4%; font-size: 2.4rem; transform: rotate(-6deg); }
+.deco-6 { top: 40%; right: 5%; font-size: 2.6rem; transform: rotate(15deg); }
+.deco-7 { top: 4%;  left: 45%; font-size: 2.3rem; transform: rotate(-8deg); }
+.deco-8 { bottom: 5%; left: 48%; font-size: 2.4rem; transform: rotate(10deg); }
+
 .auth-box {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 360px;
   background: var(--panel);

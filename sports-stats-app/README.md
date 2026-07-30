@@ -1,9 +1,9 @@
 # Sports Stats Search
 
 Desktop app (Flask + a native window via pywebview) to look up teams and players across sports
-(soccer, basketball, football, hockey, baseball, golf, tennis, and more) using TheSportsDB free
-API, plus your own account for logging sport-specific personal stats, comparing yourself to pro
-athletes, a leaderboard against other users, and simple trend projections.
+(soccer, basketball, football, hockey, baseball, golf, tennis, MMA/boxing, and more) using
+TheSportsDB free API, plus your own account for logging sport-specific personal stats, comparing
+yourself to pro athletes, a leaderboard against other users, and simple trend projections.
 
 ## Just want to run it?
 
@@ -27,6 +27,21 @@ pyinstaller --onefile --name SportsStatsApp --add-data "templates;templates" --a
 ```
 
 The exe is written to `dist/SportsStatsApp.exe`.
+
+## Project structure
+
+```
+app.py               Flask app: routes, auth, TheSportsDB fetch/cache, projections math,
+                      and the pywebview window that hosts it all
+db.py                SQLite access layer — schema (users, stat_logs), user/stat CRUD,
+                      leaderboard query
+metrics.py           Catalog of loggable metrics per sport (key, label, unit, higher/lower-is-better)
+templates/index.html Single-page HTML shell the frontend renders into
+static/script.js     Frontend logic — tabs, search, compare, leaderboard, projections, sparkline
+static/style.css     App styling (CSS custom properties for colors, layout, components)
+requirements.txt     Python dependencies (Flask, requests, pywebview)
+dist/                Built standalone .exe (generated, not meant to be hand-edited)
+```
 
 ## Features
 
@@ -61,3 +76,6 @@ The exe is written to `dist/SportsStatsApp.exe`.
   than pulled from the API.
 - Projections are a simple linear regression over your own logged history — a fun estimate, not
   a scientific prediction.
+- Colors are set via CSS custom properties at the top of `static/style.css` (`--bg`, `--text`,
+  `--accent`, etc.) — the app currently uses a fixed light-blue/dark-blue palette regardless of
+  OS theme.
