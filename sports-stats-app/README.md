@@ -101,8 +101,10 @@ dist/                Built standalone .exe (generated, not meant to be hand-edit
 
 ## AI Coach setup
 
-The Coach tab calls Google's **Gemini API free tier** — no cost, no credit card, but each person
-running the app needs their own personal API key (keys are never shared or synced):
+The Coach tab calls Google's **Gemini API free tier** — no cost, no credit card. How the key
+gets configured differs depending on how you're running the app:
+
+**Desktop exe / running from source locally** — each person needs their own personal key:
 
 1. Go to [aistudio.google.com](https://aistudio.google.com), sign in, and generate a free API key.
 2. Give it to the app one of two ways:
@@ -114,6 +116,16 @@ running the app needs their own personal API key (keys are never shared or synce
 
 Nothing about this key is committed to the repo or bundled into the `.exe` — it only lives on
 each person's own machine.
+
+**Cloud (Render) deployment** — there's only *one* running backend serving every visitor, so
+**only the person who deployed it sets a key, once** — visitors never need their own:
+
+1. In the Render dashboard, open the web service → **Environment**.
+2. Add an environment variable `GEMINI_API_KEY` with your own free key from
+   [aistudio.google.com](https://aistudio.google.com) as the value, then save (Render redeploys
+   automatically). `render.yaml` already declares this variable (`sync: false`), so Render also
+   prompts for it the first time the Blueprint is applied on a fresh deploy.
+3. That's it — every visitor to the site now gets Coach access with no setup of their own.
 
 If the Coach ever errors with a `429 quota exceeded, limit: 0` message, the model name in
 `app.py` (`GEMINI_MODEL`) has likely been retired from the free tier — Google rotates which
