@@ -8,9 +8,13 @@ import re
 import sys
 import time
 
-import google.generativeai as genai
 import requests
 from flask import Flask, jsonify, render_template, request, session
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
@@ -445,6 +449,9 @@ def coach_chat():
 
     if not message:
         return jsonify({"error": "Message is required."}), 400
+
+    if genai is None:
+        return jsonify({"error": "AI Coach isn't available on this deployment (google-generativeai isn't installed)."}), 503
 
     api_key = get_gemini_api_key()
     if not api_key:

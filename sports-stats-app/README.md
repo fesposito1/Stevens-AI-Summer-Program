@@ -54,9 +54,13 @@ frontend, no changes needed either way.
   case, but not meant as permanent storage.
 - To shut it down when you're done, delete the Blueprint (both the web service and database) from
   the Render dashboard so it stops counting against your free usage.
-- The cloud deployment uses `requirements-cloud.txt` (Flask, requests, gunicorn, psycopg2-binary —
-  no pywebview, since there's no desktop window in the cloud) and `Procfile` (`gunicorn app:app`)
-  instead of the desktop `requirements.txt`.
+- The cloud deployment uses `requirements-cloud.txt` (Flask, requests, gunicorn, psycopg2-binary,
+  google-generativeai — no pywebview, since there's no desktop window in the cloud) and `Procfile`
+  (`gunicorn app:app`) instead of the desktop `requirements.txt`.
+- To enable AI Coach on the cloud deploy, add a `GEMINI_API_KEY` environment variable in the
+  service's Environment tab (the local key-file fallback won't persist across free-tier restarts,
+  same reasoning as `SECRET_KEY`). Without it, the Coach tab just shows a setup reminder instead
+  of erroring — the rest of the app works fine either way.
 
 ## Project structure
 
