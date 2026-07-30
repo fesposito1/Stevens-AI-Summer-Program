@@ -57,13 +57,15 @@ from scratch on a different Render account:
 
 ```
 app.py               Flask app: routes, auth, TheSportsDB fetch/cache, projections math, AI Coach,
-                      and the pywebview window used for local dev
+                      schedule (matches/practices), and the pywebview window used for local dev
 db.py                DB access layer — SQLite locally, Postgres in the cloud (auto-detected via
-                      DATABASE_URL) — schema (users, stat_logs), user/stat CRUD, leaderboard query
+                      DATABASE_URL) — schema (users, stat_logs, events), user/stat/event CRUD,
+                      leaderboard query
 render.yaml           Render Blueprint: defines the free web service + free Postgres database
 Procfile              Cloud start command (gunicorn app:app)
 requirements-cloud.txt Cloud-only dependencies (adds gunicorn + psycopg2-binary, drops pywebview)
-metrics.py           Catalog of loggable metrics per sport (key, label, unit, higher/lower-is-better)
+metrics.py           Catalog of loggable metrics per sport (key, label, unit, higher/lower-is-better),
+                      plus which metrics count as "per-game" per sport (used by the Calendar log form)
 templates/index.html Single-page HTML shell the frontend renders into
 static/script.js     Frontend logic — tabs, search, compare, leaderboard, projections, sparkline
 static/style.css     App styling (CSS custom properties for colors, layout, components)
@@ -96,6 +98,14 @@ requirements.txt     Local-dev Python dependencies (Flask, requests, pywebview, 
   (from your logged Bio age, if any), then projected forward with a diminishing-returns curve that
   levels off over time instead of extending in a straight line — 30/90/365-day estimates, plus a
   sparkline of your history.
+- **Calendar** — schedule a match or practice on a day, picking the sport (Soccer, Basketball,
+  Football, Baseball, Hockey, Golf, Tennis, MMA/Boxing, or Running), plus an optional time and
+  opponent. On any day you have one scheduled, the Home tab shows a reminder banner ("You have a
+  Basketball Match today — log your stats") that expands into a quick form for that sport's
+  per-game stats (see `GAME_METRIC_KEYS_BY_SPORT` in `metrics.py` — e.g. points/rebounds/assists
+  for Basketball, hits/RBIs/strikeouts for Baseball, aces/unforced errors for Tennis, etc.) — these
+  save into Your Stats like any other metric, so they also show up in the leaderboard and
+  projections.
 - **AI Coach** — a free-form chat coach (Google Gemini) that gives advice based on your actual
   logged stats. Not scripted/pre-programmed responses — see "AI Coach setup" below to enable it.
 

@@ -18,7 +18,7 @@ except ImportError:
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
-from metrics import SPORT_METRICS, metric_lookup
+from metrics import SPORT_METRICS, metric_lookup, GAME_METRIC_KEYS_BY_SPORT
 
 
 def resource_path(relative_path):
@@ -81,7 +81,7 @@ def ensure_admin_account():
         return
     db.create_user(
         ADMIN_USERNAME,
-        generate_password_hash(ADMIN_DEFAULT_PASSWORD),
+        generate_password_hash(ADMIN_DEFAULT_PASSWORD, method="pbkdf2:sha256"),
         datetime.now().isoformat(),
         is_admin=1,
     )
@@ -315,10 +315,10 @@ def signup():
 
     user_id = db.create_user(
         username,
-        generate_password_hash(password),
+        generate_password_hash(password, method="pbkdf2:sha256"),
         datetime.now().isoformat(),
         security_question=SECURITY_QUESTION,
-        security_answer_hash=generate_password_hash(security_answer.lower()),
+        security_answer_hash=generate_password_hash(security_answer.lower(), method="pbkdf2:sha256"),
     )
     session.permanent = True
     session["user_id"] = user_id
@@ -387,7 +387,7 @@ def forgot_reset():
     if not check_password_hash(user["security_answer_hash"], answer.lower()):
         return jsonify({"error": "That answer doesn't match."}), 401
 
-    db.update_user_password(user["id"], generate_password_hash(new_password))
+    db.update_user_password(user["id"], generate_password_hash(new_password, method="pbkdf2:sha256"))
     return jsonify({"ok": True})
 
 
@@ -408,7 +408,7 @@ def admin_reset_password(user_id):
         return jsonify({"error": "New password must be at least 6 characters."}), 400
     if not db.get_user_by_id(user_id):
         return jsonify({"error": "User not found."}), 404
-    db.update_user_password(user_id, generate_password_hash(new_password))
+    db.update_user_password(user_id, generate_password_hash(new_password, method="pbkdf2:sha256"))
     return jsonify({"ok": True})
 
 
@@ -451,7 +451,7 @@ def admin_set_settings():
 
 @app.route("/api/metrics/catalog")
 def metrics_catalog():
-    return jsonify({"sports": SPORT_METRICS})
+    return jsonify({"sports": SPORT_METRICS, "game_metric_keys": GAME_METRIC_KEYS_BY_SPORT})
 
 
 # ---------- Stats logging ----------
@@ -489,6 +489,99 @@ def log_stat():
 @login_required
 def stats_me():
     return jsonify({"stats": db.get_stats_for_user(session["user_id"])})
+
+
+# ---------- Schedule (matches & practices) ----------
+
+@app.route("/api/events", methods=["POST"])
+@login_required
+def create_event():
+    payload = request.get_json(silent=True) or {}
+    event_date = (payload.get("event_date") or "").strip()
+    event_time = (payload.get("event_time") or "").strip() or None
+    event_type = payload.get("event_type")
+    sport = payload.get("sport")
+    opponent = (payload.get("opponent") or "").strip() or None
+    notes = (payload.get("notes") or "").strip() or None
+
+    if event_type not in ("match", "practice"):
+        return jsonify({"error": "event_type must be 'match' or 'practice'."}), 400
+    if sport not in GAME_METRIC_KEYS_BY_SPORT:
+        return jsonify({"error": "Unknown or unsupported sport."}), 400
+    try:
+        datetime.strptime(event_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "event_date must be YYYY-MM-DD."}), 400
+    if event_time is not None:
+        try:
+            datetime.strptime(event_time, "%H:%M")
+        except ValueError:
+            return jsonify({"error": "event_time must be HH:MM."}), 400
+
+    event_id = db.add_event(
+        session["user_id"], event_date, event_type, sport, opponent, notes, datetime.now().isoformat(),
+        event_time=event_time,
+    )
+    return jsonify({"id": event_id})
+
+
+@app.route("/api/events/me")
+@login_required
+def events_me():
+    return jsonify({"events": db.get_events_for_user(session["user_id"])})
+
+
+@app.route("/api/events/today")
+@login_required
+def events_today():
+    today = datetime.now().strftime("%Y-%m-%d")
+    return jsonify({"date": today, "events": db.get_events_on_date(session["user_id"], today)})
+
+
+@app.route("/api/events/<int:event_id>", methods=["DELETE"])
+@login_required
+def delete_event_route(event_id):
+    if not db.get_event(event_id, session["user_id"]):
+        return jsonify({"error": "Event not found."}), 404
+    db.delete_event(event_id, session["user_id"])
+    return jsonify({"ok": True})
+
+
+@app.route("/api/events/<int:event_id>/log", methods=["POST"])
+@login_required
+def log_event_stats(event_id):
+    event = db.get_event(event_id, session["user_id"])
+    if not event:
+        return jsonify({"error": "Event not found."}), 404
+
+    sport = event["sport"]
+    valid_keys = GAME_METRIC_KEYS_BY_SPORT.get(sport, [])
+    payload = request.get_json(silent=True) or {}
+    values = payload.get("values") or {}
+    recorded_at = datetime.now().isoformat()
+
+    saved = 0
+    for metric_key, raw_value in values.items():
+        if metric_key not in valid_keys or raw_value in (None, ""):
+            continue
+        metric = metric_lookup(sport, metric_key)
+        if not metric:
+            continue
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        db.add_stat_log(
+            session["user_id"], sport, metric_key, metric["label"], metric["unit"], metric["direction"],
+            value, recorded_at, 0,
+        )
+        saved += 1
+
+    if saved == 0:
+        return jsonify({"error": "Enter at least one stat value."}), 400
+
+    db.mark_event_logged(event_id)
+    return jsonify({"ok": True, "saved": saved})
 
 
 # ---------- Leaderboard ----------
