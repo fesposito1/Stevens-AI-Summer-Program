@@ -10,7 +10,6 @@ import time
 
 import google.generativeai as genai
 import requests
-import webview
 from flask import Flask, jsonify, render_template, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -24,6 +23,10 @@ def resource_path(relative_path):
 
 
 def load_or_create_secret_key():
+    env_key = os.environ.get("SECRET_KEY")
+    if env_key:
+        return env_key.encode()
+
     path = os.path.join(db.data_dir(), "secret.key")
     if os.path.exists(path):
         with open(path, "rb") as f:
@@ -682,6 +685,8 @@ def player_detail(player_id):
 
 
 if __name__ == "__main__":
+    import webview  # desktop-only dependency, not installed/needed in the cloud deploy
+
     PORT = 5000
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 

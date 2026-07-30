@@ -28,13 +28,46 @@ pyinstaller --onefile --name SportsStatsApp --add-data "templates;templates" --a
 
 The exe is written to `dist/SportsStatsApp.exe`.
 
+## Deploy to the cloud (free, so a shared leaderboard works across multiple people)
+
+The desktop exe is single-machine only (SQLite file, one person's Windows install). To let
+several people log stats and see each other on the same leaderboard, deploy the same app to
+Render's free tier instead — no laptop needs to stay on.
+
+`db.py` auto-detects which backend to use: if a `DATABASE_URL` environment variable is present
+it uses Postgres (cloud), otherwise it uses the local SQLite file (desktop exe). Same code, same
+frontend, no changes needed either way.
+
+**One-time setup:**
+1. Push this repo to GitHub (already done if you're reading this from there).
+2. Go to [render.com](https://render.com) and sign up (free, no credit card needed for the free tier).
+3. Click **New > Blueprint**, pick this repo. Render will detect `render.yaml` at the repo root
+   and provision both the web service and a free Postgres database automatically, wiring
+   `DATABASE_URL` and a random `SECRET_KEY` for you.
+4. Click **Apply**. First build takes a few minutes; after that you get a public URL
+   (`https://sports-stats-app-xxxx.onrender.com`) anyone can open in a browser — no exe, no install.
+
+**Things to know:**
+- Free web services spin down after ~15 minutes idle; the next visit takes ~30-50 seconds to
+  wake back up. Fine for a multi-day group project, not for "always instant."
+- Render's free Postgres plan is time-limited (currently 30 days) — plenty for a short-term use
+  case, but not meant as permanent storage.
+- To shut it down when you're done, delete the Blueprint (both the web service and database) from
+  the Render dashboard so it stops counting against your free usage.
+- The cloud deployment uses `requirements-cloud.txt` (Flask, requests, gunicorn, psycopg2-binary —
+  no pywebview, since there's no desktop window in the cloud) and `Procfile` (`gunicorn app:app`)
+  instead of the desktop `requirements.txt`.
+
 ## Project structure
 
 ```
 app.py               Flask app: routes, auth, TheSportsDB fetch/cache, projections math,
                       and the pywebview window that hosts it all
-db.py                SQLite access layer — schema (users, stat_logs), user/stat CRUD,
-                      leaderboard query
+db.py                DB access layer — SQLite locally, Postgres in the cloud (auto-detected via
+                      DATABASE_URL) — schema (users, stat_logs), user/stat CRUD, leaderboard query
+render.yaml           Render Blueprint: defines the free web service + free Postgres database
+Procfile              Cloud start command (gunicorn app:app)
+requirements-cloud.txt Cloud-only dependencies (adds gunicorn + psycopg2-binary, drops pywebview)
 metrics.py           Catalog of loggable metrics per sport (key, label, unit, higher/lower-is-better)
 templates/index.html Single-page HTML shell the frontend renders into
 static/script.js     Frontend logic — tabs, search, compare, leaderboard, projections, sparkline
@@ -89,9 +122,13 @@ models get free quota. Swap it for whatever `gemini-*-latest` alias is current a
 
 ## Data & storage
 
-- User accounts and stat logs are stored in a local SQLite database at
-  `%LOCALAPPDATA%\SportsStatsApp\data.db` (not in this repo, not synced anywhere).
-- The session signing key is stored alongside it at `%LOCALAPPDATA%\SportsStatsApp\secret.key`.
+- **Desktop exe:** user accounts and stat logs are stored in a local SQLite database at
+  `%LOCALAPPDATA%\SportsStatsApp\data.db` (not in this repo, not synced anywhere). The session
+  signing key is stored alongside it at `%LOCALAPPDATA%\SportsStatsApp\secret.key`.
+- **Cloud (Render):** accounts and stat logs live in the linked Postgres database instead, shared
+  by everyone who uses the deployed URL — that's what makes the leaderboard actually shared. The
+  session signing key comes from the `SECRET_KEY` environment variable Render generates, not a
+  local file (a local file would reset every time the free-tier container restarts).
 
 ## Notes
 
