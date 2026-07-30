@@ -9,7 +9,6 @@ import sys
 import time
 
 import requests
-import webview
 from flask import Flask, jsonify, render_template, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -592,6 +591,8 @@ def player_detail(player_id):
 
 
 if __name__ == "__main__":
+    import webview  # desktop-only dependency, not installed/needed in the cloud deploy
+
     PORT = 5000
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
