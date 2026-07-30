@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+import uuid
 
 import requests
 from flask import Flask, jsonify, render_template, request, session
@@ -112,6 +113,42 @@ def admin_required(f):
             return jsonify({"error": "Admin access required"}), 403
         return f(*args, **kwargs)
     return wrapper
+
+
+DEVICE_COOKIE_NAME = "device_id"
+
+
+def get_client_ip():
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def get_device_id():
+    return request.cookies.get(DEVICE_COOKIE_NAME)
+
+
+@app.before_request
+def enforce_bans():
+    if session.get("is_admin"):
+        return None
+    if db.is_ip_banned(get_client_ip()):
+        return jsonify({"error": "You have been banned from this app."}), 403
+    device_id = get_device_id()
+    if device_id and db.is_device_banned(device_id):
+        return jsonify({"error": "You have been banned from this app."}), 403
+    return None
+
+
+@app.after_request
+def ensure_device_cookie(response):
+    if not request.cookies.get(DEVICE_COOKIE_NAME):
+        response.set_cookie(
+            DEVICE_COOKIE_NAME, uuid.uuid4().hex,
+            max_age=60 * 60 * 24 * 365 * 2, httponly=True, samesite="Lax",
+        )
+    return response
 
 
 def sportsdb_get(endpoint, params=None):
@@ -355,7 +392,7 @@ def login():
     if not user or not check_password_hash(user["password_hash"], password):
         return jsonify({"error": "Invalid username or password."}), 401
 
-    db.update_last_login(user["id"], datetime.now().isoformat())
+    db.update_last_login(user["id"], datetime.now().isoformat(), get_client_ip(), get_device_id())
 
     session.permanent = True
     session["user_id"] = user["id"]
@@ -409,6 +446,64 @@ def forgot_reset():
     return jsonify({"ok": True})
 
 
+# ---------- Account (self-service) ----------
+
+@app.route("/api/account/change-password", methods=["POST"])
+@login_required
+def account_change_password():
+    payload = request.get_json(silent=True) or {}
+    current_password = payload.get("current_password") or ""
+    new_password = payload.get("new_password") or ""
+
+    user = db.get_user_by_id(session["user_id"])
+    if not user or not check_password_hash(user["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect."}), 401
+    if len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters."}), 400
+
+    db.update_user_password(user["id"], generate_password_hash(new_password, method="pbkdf2:sha256"))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/account/security-question", methods=["POST"])
+@login_required
+def account_update_security_question():
+    payload = request.get_json(silent=True) or {}
+    current_password = payload.get("current_password") or ""
+    new_question = (payload.get("new_question") or "").strip()
+    new_answer = (payload.get("new_answer") or "").strip()
+
+    user = db.get_user_by_id(session["user_id"])
+    if not user or not check_password_hash(user["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect."}), 401
+    if not new_question:
+        return jsonify({"error": "A security question is required."}), 400
+    if not new_answer:
+        return jsonify({"error": "A security answer is required."}), 400
+
+    db.update_security_question(
+        user["id"], new_question, generate_password_hash(new_answer.lower(), method="pbkdf2:sha256")
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/account/delete", methods=["POST"])
+@login_required
+def account_delete():
+    payload = request.get_json(silent=True) or {}
+    password = payload.get("password") or ""
+
+    user = db.get_user_by_id(session["user_id"])
+    if not user or not check_password_hash(user["password_hash"], password):
+        return jsonify({"error": "Password is incorrect."}), 401
+    if user["username"] == ADMIN_USERNAME:
+        return jsonify({"error": "Can't delete the seeded admin account."}), 400
+
+    db.delete_user(user["id"])
+    session.clear()
+    return jsonify({"ok": True})
+
+
 # ---------- Admin ----------
 
 @app.route("/api/admin/users")
@@ -447,6 +542,18 @@ def admin_rename_user(user_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/admin/users/<int:user_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_user(user_id):
+    target = db.get_user_by_id(user_id)
+    if not target:
+        return jsonify({"error": "User not found."}), 404
+    if target["username"] == ADMIN_USERNAME:
+        return jsonify({"error": "Can't delete the seeded admin account."}), 400
+    db.delete_user(user_id)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/admin/settings")
 @admin_required
 def admin_get_settings():
@@ -462,6 +569,50 @@ def admin_set_settings():
     prompt = payload.get("coach_system_prompt")
     if prompt is not None:
         db.set_setting("coach_system_prompt", prompt)
+    return jsonify({"ok": True})
+
+
+# ---------- Admin: bans ----------
+
+@app.route("/api/admin/bans")
+@admin_required
+def admin_list_bans():
+    return jsonify({"ips": db.get_banned_ips(), "devices": db.get_banned_devices()})
+
+
+@app.route("/api/admin/bans/ip", methods=["POST"])
+@admin_required
+def admin_ban_ip():
+    payload = request.get_json(silent=True) or {}
+    ip_address = (payload.get("ip_address") or "").strip()
+    if not ip_address:
+        return jsonify({"error": "ip_address is required."}), 400
+    db.ban_ip(ip_address, datetime.now().isoformat())
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/bans/ip/<path:ip_address>", methods=["DELETE"])
+@admin_required
+def admin_unban_ip(ip_address):
+    db.unban_ip(ip_address)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/bans/device", methods=["POST"])
+@admin_required
+def admin_ban_device():
+    payload = request.get_json(silent=True) or {}
+    device_id = (payload.get("device_id") or "").strip()
+    if not device_id:
+        return jsonify({"error": "device_id is required."}), 400
+    db.ban_device(device_id, datetime.now().isoformat())
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/bans/device/<device_id>", methods=["DELETE"])
+@admin_required
+def admin_unban_device(device_id):
+    db.unban_device(device_id)
     return jsonify({"ok": True})
 
 

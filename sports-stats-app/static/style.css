@@ -524,6 +524,26 @@ th {
   font-size: 0.8rem;
 }
 
+.admin-actions .admin-delete-btn,
+.admin-actions .admin-ban-user-ip-btn,
+.admin-actions .admin-ban-user-device-btn {
+  background: #c0392b;
+}
+
+/* ---------- Account panel ---------- */
+
+.danger-zone {
+  border-color: #c0392b;
+}
+
+.danger-btn {
+  background: #c0392b;
+}
+
+.danger-btn:hover {
+  filter: brightness(1.1);
+}
+
 /* ---------- App shell ---------- */
 
 .app-header {

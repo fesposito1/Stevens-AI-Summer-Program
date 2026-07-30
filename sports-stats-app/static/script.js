@@ -5,7 +5,7 @@ let currentIsAdmin = false;
 
 const ALL_TAB_IDS = [
   "tab-home", "tab-your-stats", "tab-calendar", "tab-player-stats", "tab-compare",
-  "tab-leaderboard", "tab-projections", "tab-coach", "tab-admin",
+  "tab-leaderboard", "tab-projections", "tab-coach", "tab-account", "tab-admin",
 ];
 
 window.addEventListener("DOMContentLoaded", init);
@@ -195,6 +195,7 @@ function activateTab(tab) {
   if (tab === "leaderboard") renderLeaderboardPanel();
   if (tab === "projections") renderProjectionsPanel();
   if (tab === "coach") renderCoachPanel();
+  if (tab === "account") renderAccountPanel();
   if (tab === "admin") renderAdminPanel();
 }
 
@@ -1476,6 +1477,17 @@ async function renderAdminPanel() {
       <div id="admin-users"></div>
     </div>
     <div class="category">
+      <h3>Banned IPs &amp; Devices</h3>
+      <p class="empty-note">Banning a user's IP or device blocks them from using the app entirely (login, signup, everything) until unbanned. Admin sessions are never blocked by their own bans.</p>
+      <div class="compare-form">
+        <label>Ban an IP manually
+          <input type="text" id="admin-manual-ip" placeholder="e.g. 203.0.113.5" />
+        </label>
+        <button type="button" id="admin-ban-ip-btn">Ban IP</button>
+      </div>
+      <div id="admin-bans"></div>
+    </div>
+    <div class="category">
       <h3>AI Coach Prompt</h3>
       <p class="empty-note">Edit the system instructions given to the Coach for every conversation.</p>
       <textarea id="admin-coach-prompt" class="admin-prompt-textarea" rows="6"></textarea>
@@ -1500,7 +1512,7 @@ async function renderAdminPanel() {
     }
     container.innerHTML = `
       <table>
-        <thead><tr><th>Username</th><th>Admin</th><th>Created</th><th>Last Login</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Username</th><th>Admin</th><th>Created</th><th>Last Login</th><th>Last IP</th><th>Actions</th></tr></thead>
         <tbody>
           ${data.users.map((u) => `
             <tr>
@@ -1508,9 +1520,13 @@ async function renderAdminPanel() {
               <td>${u.is_admin ? "Yes" : "-"}</td>
               <td>${new Date(u.created_at).toLocaleString()}</td>
               <td>${u.last_login ? new Date(u.last_login).toLocaleString() : "Never"}</td>
+              <td>${u.last_ip || "-"}</td>
               <td class="admin-actions">
                 <button type="button" class="admin-reset-btn" data-id="${u.id}" data-username="${u.username}">Reset Password</button>
                 <button type="button" class="admin-rename-btn" data-id="${u.id}" data-username="${u.username}">Rename</button>
+                ${!u.is_admin ? `<button type="button" class="admin-delete-btn" data-id="${u.id}" data-username="${u.username}">Delete</button>` : ""}
+                ${u.last_ip ? `<button type="button" class="admin-ban-user-ip-btn" data-ip="${u.last_ip}" data-username="${u.username}">Ban IP</button>` : ""}
+                ${u.last_device_id ? `<button type="button" class="admin-ban-user-device-btn" data-device="${u.last_device_id}" data-username="${u.username}">Ban Device</button>` : ""}
               </td>
             </tr>
           `).join("")}
@@ -1554,7 +1570,119 @@ async function renderAdminPanel() {
         loadUsers();
       });
     });
+
+    container.querySelectorAll(".admin-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm(`Delete ${btn.dataset.username}? This removes their account and all their stats/events permanently.`)) return;
+        const res = await fetch(`/api/admin/users/${btn.dataset.id}/delete`, { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) {
+          showAdminMessage(data.error || "Failed.");
+          return;
+        }
+        showAdminMessage("Deleted.");
+        loadUsers();
+      });
+    });
+
+    container.querySelectorAll(".admin-ban-user-ip-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm(`Ban IP ${btn.dataset.ip} (${btn.dataset.username}'s last known IP)?`)) return;
+        await fetch("/api/admin/bans/ip", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ip_address: btn.dataset.ip }),
+        });
+        showAdminMessage("IP banned.");
+        loadBans();
+      });
+    });
+
+    container.querySelectorAll(".admin-ban-user-device-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm(`Ban ${btn.dataset.username}'s device?`)) return;
+        await fetch("/api/admin/bans/device", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device_id: btn.dataset.device }),
+        });
+        showAdminMessage("Device banned.");
+        loadBans();
+      });
+    });
   }
+
+  async function loadBans() {
+    const res = await fetch("/api/admin/bans");
+    const data = await res.json();
+    const container = document.getElementById("admin-bans");
+    if (!res.ok) {
+      container.innerHTML = `<p class="empty-note">${data.error || "Couldn't load bans."}</p>`;
+      return;
+    }
+    if (data.ips.length === 0 && data.devices.length === 0) {
+      container.innerHTML = `<p class="empty-note">No bans in place.</p>`;
+      return;
+    }
+    container.innerHTML = `
+      ${data.ips.length ? `
+        <table>
+          <thead><tr><th>Banned IP</th><th>Since</th><th></th></tr></thead>
+          <tbody>
+            ${data.ips.map((b) => `
+              <tr>
+                <td>${b.ip_address}</td>
+                <td>${new Date(b.banned_at).toLocaleString()}</td>
+                <td><button type="button" class="admin-unban-ip-btn" data-ip="${b.ip_address}">Unban</button></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      ` : ""}
+      ${data.devices.length ? `
+        <table>
+          <thead><tr><th>Banned Device</th><th>Since</th><th></th></tr></thead>
+          <tbody>
+            ${data.devices.map((b) => `
+              <tr>
+                <td>${b.device_id}</td>
+                <td>${new Date(b.banned_at).toLocaleString()}</td>
+                <td><button type="button" class="admin-unban-device-btn" data-device="${b.device_id}">Unban</button></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      ` : ""}
+    `;
+
+    container.querySelectorAll(".admin-unban-ip-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await fetch(`/api/admin/bans/ip/${encodeURIComponent(btn.dataset.ip)}`, { method: "DELETE" });
+        showAdminMessage("IP unbanned.");
+        loadBans();
+      });
+    });
+    container.querySelectorAll(".admin-unban-device-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await fetch(`/api/admin/bans/device/${encodeURIComponent(btn.dataset.device)}`, { method: "DELETE" });
+        showAdminMessage("Device unbanned.");
+        loadBans();
+      });
+    });
+  }
+
+  document.getElementById("admin-ban-ip-btn").addEventListener("click", async () => {
+    const ip = document.getElementById("admin-manual-ip").value.trim();
+    if (!ip) return;
+    await fetch("/api/admin/bans/ip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ip_address: ip }),
+    });
+    document.getElementById("admin-manual-ip").value = "";
+    showAdminMessage("IP banned.");
+    loadBans();
+  });
 
   const settingsRes = await fetch("/api/admin/settings");
   const settingsData = await settingsRes.json();
@@ -1572,4 +1700,112 @@ async function renderAdminPanel() {
   });
 
   loadUsers();
+  loadBans();
+}
+
+// ---------- Account panel (self-service) ----------
+
+function renderAccountPanel() {
+  const panel = document.getElementById("tab-account");
+
+  panel.innerHTML = `
+    <div class="category">
+      <h3>Change Password</h3>
+      <form id="account-password-form" class="stat-form">
+        <label>Current password
+          <input type="password" id="account-current-password" required />
+        </label>
+        <label>New password
+          <input type="password" id="account-new-password" required />
+        </label>
+        <button type="submit">Change Password</button>
+      </form>
+    </div>
+    <div class="category">
+      <h3>Security Question</h3>
+      <p class="empty-note">Used to reset your password if you forget it.</p>
+      <form id="account-security-form" class="stat-form">
+        <label>Current password
+          <input type="password" id="account-security-current-password" required />
+        </label>
+        <label>New question
+          <input type="text" id="account-new-question" placeholder="e.g. What's your favorite team?" required />
+        </label>
+        <label>New answer
+          <input type="text" id="account-new-answer" required />
+        </label>
+        <button type="submit">Save</button>
+      </form>
+    </div>
+    <div class="category danger-zone">
+      <h3>Delete My Account</h3>
+      <p class="empty-note">This permanently deletes your account and all your logged stats/events. This cannot be undone.</p>
+      <form id="account-delete-form" class="stat-form">
+        <label>Confirm your password
+          <input type="password" id="account-delete-password" required />
+        </label>
+        <button type="submit" class="danger-btn">Delete My Account</button>
+      </form>
+    </div>
+    <div id="account-message" class="message hidden"></div>
+  `;
+
+  function showAccountMessage(text) {
+    const el = document.getElementById("account-message");
+    el.textContent = text;
+    el.classList.toggle("hidden", !text);
+  }
+
+  document.getElementById("account-password-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const current_password = document.getElementById("account-current-password").value;
+    const new_password = document.getElementById("account-new-password").value;
+    const res = await fetch("/api/account/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password, new_password }),
+    });
+    const data = await res.json();
+    showAccountMessage(res.ok ? "Password changed." : data.error || "Failed.");
+    if (res.ok) event.target.reset();
+  });
+
+  document.getElementById("account-security-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const current_password = document.getElementById("account-security-current-password").value;
+    const new_question = document.getElementById("account-new-question").value.trim();
+    const new_answer = document.getElementById("account-new-answer").value.trim();
+    const res = await fetch("/api/account/security-question", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password, new_question, new_answer }),
+    });
+    const data = await res.json();
+    showAccountMessage(res.ok ? "Security question updated." : data.error || "Failed.");
+    if (res.ok) event.target.reset();
+  });
+
+  document.getElementById("account-delete-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!confirm("Are you sure you want to permanently delete your account? This cannot be undone.")) return;
+    const password = document.getElementById("account-delete-password").value;
+    const res = await fetch("/api/account/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAccountMessage(data.error || "Failed.");
+      return;
+    }
+    currentUsername = null;
+    currentIsAdmin = false;
+    ALL_TAB_IDS.forEach((id) => {
+      const el = document.getElementById(id);
+      el.innerHTML = "";
+      delete el.dataset.initialized;
+    });
+    showAuthScreen();
+  });
 }
