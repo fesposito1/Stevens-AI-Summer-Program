@@ -79,7 +79,7 @@ function setupAuthUI() {
   document.getElementById("logout-btn").addEventListener("click", async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     currentUsername = null;
-    ["tab-home", "tab-your-stats", "tab-calendar", "tab-player-stats", "tab-compare", "tab-leaderboard", "tab-projections"].forEach((id) => {
+    ["tab-home", "tab-your-stats", "tab-calendar", "tab-player-stats", "tab-compare", "tab-leaderboard", "tab-projections", "tab-coach"].forEach((id) => {
       const el = document.getElementById(id);
       el.innerHTML = "";
       delete el.dataset.initialized;
@@ -126,6 +126,7 @@ function activateTab(tab) {
   if (tab === "compare") renderComparePanel();
   if (tab === "leaderboard") renderLeaderboardPanel();
   if (tab === "projections") renderProjectionsPanel();
+  if (tab === "coach") renderCoachPanel();
 }
 
 // ---------- Shared detail-rendering helpers ----------
@@ -1192,4 +1193,75 @@ function sparkline(history) {
       <polyline points="${points}" fill="none" stroke="#4f8cff" stroke-width="2" />
     </svg>
   `;
+}
+
+// ---------- Coach tab ----------
+
+function renderCoachPanel() {
+  const panel = document.getElementById("tab-coach");
+  if (panel.dataset.initialized) return;
+  panel.dataset.initialized = "true";
+
+  panel.innerHTML = `
+    <div class="category coach-panel">
+      <h3>AI Coach</h3>
+      <p class="empty-note">Ask for advice based on your logged stats — e.g. "How can I improve my mile time?"</p>
+      <div id="coach-thread" class="coach-thread"></div>
+      <form id="coach-form" class="coach-input-row">
+        <input type="text" id="coach-input" placeholder="Ask your coach..." autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+      <div id="coach-message" class="message hidden"></div>
+    </div>
+  `;
+
+  const thread = document.getElementById("coach-thread");
+  const form = document.getElementById("coach-form");
+  const input = document.getElementById("coach-input");
+  const messageEl = document.getElementById("coach-message");
+  const history = [];
+
+  function addBubble(role, text) {
+    const bubble = document.createElement("div");
+    bubble.className = `coach-bubble ${role}`;
+    bubble.textContent = text;
+    thread.appendChild(bubble);
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  function showCoachMessage(text) {
+    messageEl.textContent = text;
+    messageEl.classList.toggle("hidden", !text);
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+
+    addBubble("user", text);
+    input.value = "";
+    showCoachMessage("Coach is thinking...");
+
+    try {
+      const res = await fetch("/api/coach/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showCoachMessage(data.error || "Coach request failed.");
+        return;
+      }
+
+      showCoachMessage("");
+      history.push({ role: "user", content: text });
+      addBubble("assistant", data.reply);
+      history.push({ role: "assistant", content: data.reply });
+    } catch (err) {
+      showCoachMessage("Something went wrong reaching the coach.");
+    }
+  });
 }

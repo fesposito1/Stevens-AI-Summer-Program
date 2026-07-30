@@ -2,6 +2,13 @@ from contextlib import contextmanager
 import os
 import sqlite3
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+USE_POSTGRES = bool(DATABASE_URL)
+
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+
 
 def data_dir():
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
@@ -10,13 +17,42 @@ def data_dir():
     return path
 
 
-DB_PATH = os.path.join(data_dir(), "data.db")
+DB_PATH = None if USE_POSTGRES else os.path.join(data_dir(), "data.db")
+
+
+def _adapt(query):
+    """SQLite uses '?' placeholders, psycopg2 uses '%s' - translate when on Postgres."""
+    return query.replace("?", "%s") if USE_POSTGRES else query
+
+
+class _PGConnWrapper:
+    """Gives a psycopg2 connection the same conn.execute(...).fetchone()/fetchall()
+    convenience API that sqlite3.Connection provides, so the rest of this module
+    doesn't need to know which backend it's talking to."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, query, params=()):
+        cur = self._conn.cursor()
+        cur.execute(_adapt(query), params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
 
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    if USE_POSTGRES:
+        raw = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+        conn = _PGConnWrapper(raw)
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
     try:
         yield conn
         conn.commit()
@@ -26,56 +62,97 @@ def get_conn():
 
 def init_db():
     with get_conn() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS stat_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                sport TEXT NOT NULL,
-                metric_key TEXT NOT NULL,
-                label TEXT NOT NULL,
-                unit TEXT NOT NULL,
-                direction TEXT NOT NULL,
-                value REAL NOT NULL,
-                recorded_at TEXT NOT NULL,
-                rest_days REAL DEFAULT 0
-            )
-        """)
-        # Migration for databases created before rest_days existed.
-        try:
-            conn.execute("ALTER TABLE stat_logs ADD COLUMN rest_days REAL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                event_date TEXT NOT NULL,
-                event_time TEXT,
-                event_type TEXT NOT NULL,
-                sport TEXT NOT NULL DEFAULT 'Soccer',
-                opponent TEXT,
-                notes TEXT,
-                logged INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL
-            )
-        """)
-        # Migrations for databases created before event_time / sport existed.
-        try:
-            conn.execute("ALTER TABLE events ADD COLUMN event_time TEXT")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE events ADD COLUMN sport TEXT NOT NULL DEFAULT 'Soccer'")
-        except sqlite3.OperationalError:
-            pass
+        if USE_POSTGRES:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS stat_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    sport TEXT NOT NULL,
+                    metric_key TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    unit TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    rest_days REAL DEFAULT 0
+                )
+            """)
+            conn.execute("ALTER TABLE stat_logs ADD COLUMN IF NOT EXISTS rest_days REAL DEFAULT 0")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS events (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    event_date TEXT NOT NULL,
+                    event_time TEXT,
+                    event_type TEXT NOT NULL,
+                    sport TEXT NOT NULL DEFAULT 'Soccer',
+                    opponent TEXT,
+                    notes TEXT,
+                    logged INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS event_time TEXT")
+            conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS sport TEXT NOT NULL DEFAULT 'Soccer'")
+        else:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS stat_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    sport TEXT NOT NULL,
+                    metric_key TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    unit TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    rest_days REAL DEFAULT 0
+                )
+            """)
+            # Migration for databases created before rest_days existed.
+            try:
+                conn.execute("ALTER TABLE stat_logs ADD COLUMN rest_days REAL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    event_date TEXT NOT NULL,
+                    event_time TEXT,
+                    event_type TEXT NOT NULL,
+                    sport TEXT NOT NULL DEFAULT 'Soccer',
+                    opponent TEXT,
+                    notes TEXT,
+                    logged INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            # Migrations for databases created before event_time / sport existed.
+            try:
+                conn.execute("ALTER TABLE events ADD COLUMN event_time TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE events ADD COLUMN sport TEXT NOT NULL DEFAULT 'Soccer'")
+            except sqlite3.OperationalError:
+                pass
 
 
 def create_user(username, password_hash, created_at):
@@ -120,6 +197,13 @@ def get_stats_for_user(user_id, metric_key=None):
 
 def add_event(user_id, event_date, event_type, sport, opponent, notes, created_at, event_time=None):
     with get_conn() as conn:
+        if USE_POSTGRES:
+            row = conn.execute(
+                """INSERT INTO events (user_id, event_date, event_time, event_type, sport, opponent, notes, logged, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?) RETURNING id""",
+                (user_id, event_date, event_time, event_type, sport, opponent, notes, created_at),
+            ).fetchone()
+            return row["id"]
         cur = conn.execute(
             """INSERT INTO events (user_id, event_date, event_time, event_type, sport, opponent, notes, logged, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)""",
