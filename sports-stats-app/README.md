@@ -79,9 +79,13 @@ requirements.txt     Local-dev Python dependencies (Flask, requests, pywebview, 
   question: "What sport do you play or follow most?") used for password resets.
 - **Forgot password** — from the login screen, enter your username to see your security
   question, then answer it plus a new password to reset — no email required.
+- **Account settings** — logged-in users can change their password, update their security
+  question/answer, or permanently delete their own account (all require re-entering your current
+  password first).
 - **Admin panel** — a seeded `admin` account (see "Admin account" below) can view all users
-  (including last login time), reset anyone's password, rename usernames, and edit the AI
-  Coach's system prompt live without redeploying.
+  (including last login time and last known IP), reset anyone's password, rename usernames,
+  delete accounts, edit the AI Coach's system prompt live without redeploying, and ban/unban
+  visitors by IP address or by a persistent device cookie (see "Banning" below).
 - **Your Stats** — log sport-specific metrics over time (mile time, 40-yard dash, vertical jump,
   bench press, batting average, driving distance, etc. — see `metrics.py` for the full catalog
   per sport) and view your history.
@@ -118,10 +122,29 @@ in `app.py`), if one doesn't already exist:
 - Password: `123456`
 
 Log in as admin to see the **Admin** tab (hidden for everyone else) — manage users, reset
-passwords, rename usernames, and edit the Coach's system prompt. **Change this password** (via
-the Admin tab's own "Reset Password" button on the `admin` row, or the Forgot Password flow)
-once you're using this for anything beyond a short private demo — it's a known default in this
-public repo.
+passwords, rename usernames, delete accounts, edit the Coach's system prompt, and manage IP/device
+bans. **Change this password** (via the Admin tab's own "Reset Password" button on the `admin`
+row, or the Forgot Password flow) once you're using this for anything beyond a short private
+demo — it's a known default in this public repo. The seeded admin account can't be deleted
+(by itself or by another admin) so there's always at least one admin account.
+
+## Banning
+
+The Admin tab can block a visitor entirely (login, signup, every route) by:
+- **IP address** — read from the `X-Forwarded-For` header (Render sits behind a proxy) or
+  `request.remote_addr` as a fallback. Each user row shows their last known IP with a one-click
+  "Ban IP" button, or ban any IP manually.
+- **Device cookie** — a random ID set in a long-lived cookie (`device_id`) the first time anyone
+  visits, independent of login. Ban a user's device from their row, or by ID directly.
+
+Caveats worth knowing: IP bans can catch multiple people sharing a network (campus WiFi, NAT),
+and either kind of ban is trivially bypassed by switching networks or clearing cookies/using a
+different browser — this is a basic deterrent, not robust anti-abuse. Admin sessions are always
+exempt from ban enforcement (checked before the IP/device check), so an admin can never lock
+themselves out by banning their own IP or device. **True MAC-address banning isn't possible for a
+website** — MAC addresses are link-layer identifiers only visible on the local network (e.g. your
+router), never sent in an HTTP request, so no web app (including this one) can see or block by
+it.
 
 ## AI Coach setup
 

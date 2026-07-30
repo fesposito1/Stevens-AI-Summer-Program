@@ -90,6 +90,8 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS security_answer_hash TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin INTEGER DEFAULT 0")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ip TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_device_id TEXT")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS app_settings (
                     key TEXT PRIMARY KEY,
@@ -112,6 +114,18 @@ def init_db():
             """)
             conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS event_time TEXT")
             conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS sport TEXT NOT NULL DEFAULT 'Soccer'")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS banned_ips (
+                    ip_address TEXT PRIMARY KEY,
+                    banned_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS banned_devices (
+                    device_id TEXT PRIMARY KEY,
+                    banned_at TEXT NOT NULL
+                )
+            """)
         else:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -155,6 +169,18 @@ def init_db():
                     created_at TEXT NOT NULL
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS banned_ips (
+                    ip_address TEXT PRIMARY KEY,
+                    banned_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS banned_devices (
+                    device_id TEXT PRIMARY KEY,
+                    banned_at TEXT NOT NULL
+                )
+            """)
             # Migrations for databases created before these columns existed.
             for stmt in (
                 "ALTER TABLE stat_logs ADD COLUMN rest_days REAL DEFAULT 0",
@@ -162,6 +188,8 @@ def init_db():
                 "ALTER TABLE users ADD COLUMN security_answer_hash TEXT",
                 "ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0",
                 "ALTER TABLE users ADD COLUMN last_login TEXT",
+                "ALTER TABLE users ADD COLUMN last_ip TEXT",
+                "ALTER TABLE users ADD COLUMN last_device_id TEXT",
                 "ALTER TABLE events ADD COLUMN event_time TEXT",
                 "ALTER TABLE events ADD COLUMN sport TEXT NOT NULL DEFAULT 'Soccer'",
             ):
@@ -199,7 +227,8 @@ def get_user_by_id(user_id):
 def get_all_users():
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id, username, created_at, is_admin, last_login FROM users ORDER BY username"
+            "SELECT id, username, created_at, is_admin, last_login, last_ip, last_device_id "
+            "FROM users ORDER BY username"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -209,14 +238,96 @@ def update_user_password(user_id, password_hash):
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
 
 
+def update_security_question(user_id, security_question, security_answer_hash):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET security_question = ?, security_answer_hash = ? WHERE id = ?",
+            (security_question, security_answer_hash, user_id),
+        )
+
+
 def rename_user(user_id, new_username):
     with get_conn() as conn:
         conn.execute("UPDATE users SET username = ? WHERE id = ?", (new_username, user_id))
 
 
-def update_last_login(user_id, timestamp):
+def update_last_login(user_id, timestamp, ip_address=None, device_id=None):
     with get_conn() as conn:
-        conn.execute("UPDATE users SET last_login = ? WHERE id = ?", (timestamp, user_id))
+        conn.execute(
+            "UPDATE users SET last_login = ?, last_ip = ?, last_device_id = ? WHERE id = ?",
+            (timestamp, ip_address, device_id, user_id),
+        )
+
+
+def delete_user(user_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM stat_logs WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM events WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+def ban_ip(ip_address, banned_at):
+    with get_conn() as conn:
+        if USE_POSTGRES:
+            conn.execute(
+                """INSERT INTO banned_ips (ip_address, banned_at) VALUES (?, ?)
+                   ON CONFLICT (ip_address) DO NOTHING""",
+                (ip_address, banned_at),
+            )
+        else:
+            conn.execute(
+                "INSERT OR IGNORE INTO banned_ips (ip_address, banned_at) VALUES (?, ?)",
+                (ip_address, banned_at),
+            )
+
+
+def unban_ip(ip_address):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM banned_ips WHERE ip_address = ?", (ip_address,))
+
+
+def is_ip_banned(ip_address):
+    with get_conn() as conn:
+        row = conn.execute("SELECT 1 FROM banned_ips WHERE ip_address = ?", (ip_address,)).fetchone()
+        return row is not None
+
+
+def get_banned_ips():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM banned_ips ORDER BY banned_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def ban_device(device_id, banned_at):
+    with get_conn() as conn:
+        if USE_POSTGRES:
+            conn.execute(
+                """INSERT INTO banned_devices (device_id, banned_at) VALUES (?, ?)
+                   ON CONFLICT (device_id) DO NOTHING""",
+                (device_id, banned_at),
+            )
+        else:
+            conn.execute(
+                "INSERT OR IGNORE INTO banned_devices (device_id, banned_at) VALUES (?, ?)",
+                (device_id, banned_at),
+            )
+
+
+def unban_device(device_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM banned_devices WHERE device_id = ?", (device_id,))
+
+
+def is_device_banned(device_id):
+    with get_conn() as conn:
+        row = conn.execute("SELECT 1 FROM banned_devices WHERE device_id = ?", (device_id,)).fetchone()
+        return row is not None
+
+
+def get_banned_devices():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM banned_devices ORDER BY banned_at DESC").fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_setting(key, default=None):
