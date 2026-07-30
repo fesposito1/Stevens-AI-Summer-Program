@@ -77,7 +77,7 @@ function setupAuthUI() {
   document.getElementById("logout-btn").addEventListener("click", async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     currentUsername = null;
-    ["tab-your-stats", "tab-player-stats", "tab-compare", "tab-leaderboard", "tab-projections"].forEach((id) => {
+    ["tab-home", "tab-your-stats", "tab-player-stats", "tab-compare", "tab-leaderboard", "tab-projections"].forEach((id) => {
       const el = document.getElementById(id);
       el.innerHTML = "";
       delete el.dataset.initialized;
@@ -97,7 +97,7 @@ function showApp(username) {
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("current-username").textContent = username;
-  activateTab("your-stats");
+  activateTab("home");
 }
 
 function showAuthScreen() {
@@ -117,6 +117,7 @@ function activateTab(tab) {
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
 
+  if (tab === "home") renderHomePanel();
   if (tab === "your-stats") renderYourStats();
   if (tab === "player-stats") renderPlayerStatsPanel();
   if (tab === "compare") renderComparePanel();
@@ -541,6 +542,95 @@ function renderComparePanel() {
     typeFilter: "player",
     renderDetail: renderCompareDetail,
   });
+}
+
+// ---------- Home tab ----------
+
+const PIE_COLORS = ["#14458f", "#2f7dc4", "#5aa9e6", "#8fd0f7", "#0a2f6b", "#3a5a8a", "#7ec8e3", "#1e6fb8"];
+
+function renderPieChart(slices) {
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  if (total === 0) return "";
+
+  let cumulative = 0;
+  const stops = slices
+    .map((s) => {
+      const start = (cumulative / total) * 360;
+      cumulative += s.value;
+      const end = (cumulative / total) * 360;
+      return `${s.color} ${start}deg ${end}deg`;
+    })
+    .join(", ");
+
+  const legend = slices
+    .map(
+      (s) => `
+      <div><span class="pie-swatch" style="background:${s.color}"></span>${s.label} (${s.value})</div>
+    `
+    )
+    .join("");
+
+  return `
+    <div class="pie-wrap">
+      <div class="pie-chart" style="background: conic-gradient(${stops});"></div>
+      <div class="pie-legend">${legend}</div>
+    </div>
+  `;
+}
+
+async function renderHomePanel() {
+  const panel = document.getElementById("tab-home");
+  const res = await fetch("/api/stats/me");
+  const data = await res.json();
+  const stats = data.stats || [];
+
+  const bySport = {};
+  stats.forEach((s) => {
+    bySport[s.sport] = (bySport[s.sport] || 0) + 1;
+  });
+  const slices = Object.entries(bySport).map(([label, value], i) => ({
+    label,
+    value,
+    color: PIE_COLORS[i % PIE_COLORS.length],
+  }));
+
+  const byMetric = {};
+  stats.forEach((s) => {
+    byMetric[s.metric_key] = byMetric[s.metric_key] || { count: 0, label: s.label, sport: s.sport };
+    byMetric[s.metric_key].count += 1;
+  });
+  const eligible = Object.entries(byMetric)
+    .filter(([, v]) => v.count >= 2)
+    .sort((a, b) => b[1].count - a[1].count);
+
+  let growthHtml = `<p class="empty-note">Log at least 2 entries for the same metric in Your Stats to see a growth trend here.</p>`;
+  if (eligible.length > 0) {
+    const [topKey, topMeta] = eligible[0];
+    const projRes = await fetch(`/api/projections/me?metric_key=${encodeURIComponent(topKey)}`);
+    const proj = await projRes.json();
+    if (projRes.ok) {
+      const dir = proj.trend_per_day === 0 ? "flat" : proj.trend_per_day > 0 ? "trending up" : "trending down";
+      growthHtml = `
+        <p><strong>${topMeta.sport} — ${topMeta.label}</strong> is ${dir} (${Math.abs(proj.trend_per_day)}${proj.metric.unit}/day).</p>
+        ${sparkline(proj.history)}
+      `;
+    }
+  }
+
+  panel.innerHTML = `
+    <div class="category home-greeting">
+      <h2>Welcome back, ${currentUsername}!</h2>
+      <p class="subtitle">Here's a snapshot of what you've logged so far.</p>
+    </div>
+    <div class="category">
+      <h3>Your Stats Breakdown</h3>
+      ${slices.length ? renderPieChart(slices) : `<p class="empty-note">No stats logged yet — head to Your Stats to log your first entry.</p>`}
+    </div>
+    <div class="category">
+      <h3>Growth</h3>
+      ${growthHtml}
+    </div>
+  `;
 }
 
 // ---------- Your Stats tab ----------
