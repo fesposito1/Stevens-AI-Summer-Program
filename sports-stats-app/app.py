@@ -226,6 +226,24 @@ def parse_weight_kg(raw):
     return None
 
 
+def cm_to_feet_inches(cm):
+    if cm is None:
+        return None
+    total_inches = cm / 2.54
+    feet = int(total_inches // 12)
+    inches = round(total_inches - feet * 12)
+    if inches == 12:
+        feet += 1
+        inches = 0
+    return f"{feet}'{inches}\""
+
+
+def kg_to_lbs(kg):
+    if kg is None:
+        return None
+    return f"{round(kg * 2.20462, 1)} lbs"
+
+
 def calc_age(date_born):
     if not date_born:
         return None
@@ -1031,10 +1049,8 @@ def player_detail(player_id):
             "nationality": info.get("strNationality"),
             "born": info.get("dateBorn"),
             "status": info.get("strStatus"),
-            "height": info.get("strHeight"),
-            "weight": info.get("strWeight"),
-            "height_cm": parse_height_cm(info.get("strHeight")),
-            "weight_kg": parse_weight_kg(info.get("strWeight")),
+            "height": cm_to_feet_inches(parse_height_cm(info.get("strHeight"))),
+            "weight": kg_to_lbs(parse_weight_kg(info.get("strWeight"))),
             "age": calc_age(info.get("dateBorn")),
             "description": info.get("strDescriptionEN"),
             "thumb": info.get("strThumb") or info.get("strCutout"),

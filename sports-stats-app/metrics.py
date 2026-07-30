@@ -1,7 +1,7 @@
 SPORT_METRICS = {
     "Bio": [
-        {"key": "height_cm", "label": "Height", "unit": "cm", "direction": "higher"},
-        {"key": "weight_kg", "label": "Weight", "unit": "kg", "direction": "higher"},
+        {"key": "height_in", "label": "Height", "unit": "in", "direction": "higher"},
+        {"key": "weight_lbs", "label": "Weight", "unit": "lbs", "direction": "higher"},
         {"key": "age", "label": "Age", "unit": "yrs", "direction": "higher"},
     ],
     "Running": [
