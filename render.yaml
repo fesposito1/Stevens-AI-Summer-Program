@@ -17,3 +17,5 @@ services:
         fromDatabase:
           name: sports-stats-db
           property: connectionString
+      - key: GEMINI_API_KEY
+        sync: false
