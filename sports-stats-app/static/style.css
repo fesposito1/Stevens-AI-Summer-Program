@@ -75,7 +75,7 @@ button:hover {
 main {
   max-width: 900px;
   margin: 0 auto;
-  padding: 0 1.5rem 3rem;
+  padding: 0 1.5rem 6rem;
 }
 
 .hidden {
@@ -325,8 +325,6 @@ th {
 /* ---------- Auth screen ---------- */
 
 .auth-screen {
-  position: relative;
-  overflow: hidden;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -335,10 +333,10 @@ th {
 }
 
 .sports-decor {
-  position: absolute;
+  position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
+  z-index: -1;
 }
 
 .sports-decor-item {
@@ -443,28 +441,43 @@ th {
 }
 
 .tab-nav {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 0 1.5rem;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
   display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--border);
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
 }
 
 .tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  flex: 1;
+  max-width: 130px;
   background: transparent;
   color: var(--muted);
   border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 0.7rem 0.9rem;
-  font-size: 0.9rem;
+  border-radius: 8px;
+  padding: 0.45rem 0.4rem;
+  font-size: 0.72rem;
+  line-height: 1.1;
+}
+
+.tab-btn .tab-icon {
+  font-size: 1.35rem;
 }
 
 .tab-btn.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .tab-panel {
@@ -517,4 +530,44 @@ th {
 .sparkline {
   display: block;
   margin: 0.6rem 0 1rem;
+}
+
+/* ---------- Home tab ---------- */
+
+.home-greeting h2 {
+  margin: 0 0 0.3rem;
+}
+
+.home-greeting .subtitle {
+  margin: 0;
+}
+
+.pie-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1.6rem;
+  flex-wrap: wrap;
+}
+
+.pie-chart {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.pie-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+}
+
+.pie-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
 }
