@@ -98,7 +98,7 @@ requirements.txt     Local-dev Python dependencies (Flask, requests, pywebview, 
 The Coach tab calls Google's **Gemini API free tier** — no cost, no credit card. How the key
 gets configured differs depending on how you're running the app:
 
-**Desktop exe / running from source locally** — each person needs their own personal key:
+**Running from source locally** — each person needs their own personal key:
 
 1. Go to [aistudio.google.com](https://aistudio.google.com), sign in, and generate a free API key.
 2. Give it to the app one of two ways:
