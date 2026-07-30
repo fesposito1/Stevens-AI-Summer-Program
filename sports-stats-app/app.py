@@ -23,6 +23,10 @@ def resource_path(relative_path):
 
 
 def load_or_create_secret_key():
+    env_key = os.environ.get("SECRET_KEY")
+    if env_key:
+        return env_key.encode()
+
     path = os.path.join(db.data_dir(), "secret.key")
     if os.path.exists(path):
         with open(path, "rb") as f:
