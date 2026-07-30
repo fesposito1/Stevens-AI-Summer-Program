@@ -1,4 +1,5 @@
 let metricsCatalog = {};
+let gameMetricKeysBySport = {};
 let currentUsername = null;
 
 window.addEventListener("DOMContentLoaded", init);
@@ -14,6 +15,7 @@ async function loadMetricsCatalog() {
   const res = await fetch("/api/metrics/catalog");
   const data = await res.json();
   metricsCatalog = data.sports || {};
+  gameMetricKeysBySport = data.game_metric_keys || {};
 }
 
 async function checkAuth() {
@@ -547,20 +549,13 @@ function renderComparePanel() {
 
 // ---------- Match/practice stat logging (shared by Home banner + Calendar) ----------
 
-const GAME_METRIC_KEYS = [
-  "possession_completion_pct",
-  "pass_completion_pct",
-  "tackles",
-  "interceptions",
-  "goals",
-  "assists",
-  "shots_dominant_foot",
-  "shots_non_dominant_foot",
-  "saves",
-];
+function gameSports() {
+  return Object.keys(gameMetricKeysBySport);
+}
 
-function gameLogFormHtml(prefix) {
-  const metrics = (metricsCatalog["Soccer"] || []).filter((m) => GAME_METRIC_KEYS.includes(m.key));
+function gameLogFormHtml(prefix, sport) {
+  const keys = gameMetricKeysBySport[sport] || [];
+  const metrics = (metricsCatalog[sport] || []).filter((m) => keys.includes(m.key));
   return `
     <div class="game-log-grid">
       ${metrics
@@ -589,12 +584,12 @@ async function saveGameLog(eventId, formEl) {
   return res.ok ? { ok: true } : { ok: false, error: data.error };
 }
 
-function wireGameLogToggle(logBtn, formContainer, eventId, prefix, onSaved) {
+function wireGameLogToggle(logBtn, formContainer, eventId, prefix, sport, onSaved) {
   logBtn.addEventListener("click", () => {
     if (formContainer.dataset.built !== "true") {
       formContainer.dataset.built = "true";
       formContainer.innerHTML = `
-        ${gameLogFormHtml(prefix)}
+        ${gameLogFormHtml(prefix, sport)}
         <button type="button" class="save-log-btn">Save Stats</button>
         <div class="log-msg empty-note hidden"></div>
       `;
@@ -694,7 +689,7 @@ async function renderHomePanel() {
       <div class="reminder-banner">
         <div class="reminder-text">
           ${e.event_type === "match" ? "⚽" : "🏋️"} You have a
-          <strong>${e.event_type === "match" ? "Match" : "Practice"}</strong> today${e.opponent ? ` vs ${e.opponent}` : ""} — log your stats.
+          ${e.sport} <strong>${e.event_type === "match" ? "Match" : "Practice"}</strong> today${e.event_time ? ` at ${formatEventTime(e.event_time)}` : ""}${e.opponent ? ` vs ${e.opponent}` : ""} — log your stats.
         </div>
         <button type="button" class="reminder-log-btn" id="reminder-log-btn-${e.id}">Log Stats</button>
       </div>
@@ -721,7 +716,7 @@ async function renderHomePanel() {
   dueEvents.forEach((e) => {
     const logBtn = document.getElementById(`reminder-log-btn-${e.id}`);
     const formContainer = document.getElementById(`reminder-form-${e.id}`);
-    wireGameLogToggle(logBtn, formContainer, e.id, `reminder-${e.id}`, renderHomePanel);
+    wireGameLogToggle(logBtn, formContainer, e.id, `reminder-${e.id}`, e.sport, renderHomePanel);
   });
 }
 
@@ -855,6 +850,14 @@ function ymd(y, m, d) {
   return `${y}-${pad2(m + 1)}-${pad2(d)}`;
 }
 
+function formatEventTime(event_time) {
+  if (!event_time) return "";
+  const [h, m] = event_time.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${pad2(m)} ${period}`;
+}
+
 async function renderCalendarPanel() {
   const panel = document.getElementById("tab-calendar");
   const now = new Date();
@@ -943,11 +946,21 @@ function renderCalendarDayPanel(dateStr, dayEvents) {
     })}</h3>
     <div id="cal-day-events"></div>
     <div class="stat-form">
+      <label>Sport
+        <select id="cal-new-sport">
+          ${gameSports()
+            .map((s) => `<option value="${s}">${s}</option>`)
+            .join("")}
+        </select>
+      </label>
       <label>Type
         <select id="cal-new-type">
           <option value="match">Match</option>
           <option value="practice">Practice</option>
         </select>
+      </label>
+      <label>Time (optional)
+        <input type="time" id="cal-new-time" />
       </label>
       <label>Opponent (optional)
         <input type="text" id="cal-new-opponent" placeholder="e.g. Riverdale HS" />
@@ -960,12 +973,14 @@ function renderCalendarDayPanel(dateStr, dayEvents) {
   renderCalendarDayEvents(dayEvents);
 
   document.getElementById("cal-new-save").addEventListener("click", async () => {
+    const sport = document.getElementById("cal-new-sport").value;
     const event_type = document.getElementById("cal-new-type").value;
+    const event_time = document.getElementById("cal-new-time").value;
     const opponent = document.getElementById("cal-new-opponent").value.trim();
     const res = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event_date: dateStr, event_type, opponent }),
+      body: JSON.stringify({ event_date: dateStr, event_time, event_type, sport, opponent }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -991,7 +1006,8 @@ function renderCalendarDayEvents(dayEvents) {
     <div class="cal-event-row">
       <div>
         <span class="badge ${e.event_type}">${e.event_type}</span>
-        ${e.opponent ? `vs ${e.opponent}` : ""}
+        <strong>${e.sport}</strong>
+        ${e.event_time ? `· ${formatEventTime(e.event_time)} ` : ""}${e.opponent ? `vs ${e.opponent}` : ""}
         ${e.logged ? `<span class="cal-logged">&#10003; logged</span>` : ""}
       </div>
       <div class="cal-event-actions">
@@ -1011,7 +1027,7 @@ function renderCalendarDayEvents(dayEvents) {
     if (!e.logged) {
       const logBtn = document.getElementById(`cal-log-btn-${e.id}`);
       const formContainer = document.getElementById(`cal-log-form-${e.id}`);
-      wireGameLogToggle(logBtn, formContainer, e.id, `cal-${e.id}`, renderCalendarPanel);
+      wireGameLogToggle(logBtn, formContainer, e.id, `cal-${e.id}`, e.sport, renderCalendarPanel);
     }
   });
 }

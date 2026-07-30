@@ -36,7 +36,7 @@ app.py               Flask app: routes, auth, TheSportsDB fetch/cache, projectio
 db.py                SQLite access layer — schema (users, stat_logs, events), user/stat/event CRUD,
                       leaderboard query
 metrics.py           Catalog of loggable metrics per sport (key, label, unit, higher/lower-is-better),
-                      plus which Soccer metrics count as "per-game" (used by the Calendar log form)
+                      plus which metrics count as "per-game" per sport (used by the Calendar log form)
 templates/index.html Single-page HTML shell the frontend renders into
 static/script.js     Frontend logic — tabs, search, compare, leaderboard, projections, sparkline
 static/style.css     App styling (CSS custom properties for colors, layout, components)
@@ -64,12 +64,14 @@ dist/                Built standalone .exe (generated, not meant to be hand-edit
   (from your logged Bio age, if any), then projected forward with a diminishing-returns curve that
   levels off over time instead of extending in a straight line — 30/90/365-day estimates, plus a
   sparkline of your history.
-- **Calendar** — schedule soccer matches and practices on a day (with an optional opponent). On
-  any day you have one scheduled, the Home tab shows a reminder banner ("You have a Match today —
-  log your stats") that expands into a quick form for that day's match/practice stats (possession
-  completion, pass completion rate, tackles, interceptions, goals, assists, shots by dominant/
-  non-dominant foot, goalkeeper saves) — these save into Your Stats like any other metric, so they
-  also show up in the leaderboard and projections.
+- **Calendar** — schedule a match or practice on a day, picking the sport (Soccer, Basketball,
+  Football, Baseball, Hockey, Golf, Tennis, MMA/Boxing, or Running), plus an optional time and
+  opponent. On any day you have one scheduled, the Home tab shows a reminder banner ("You have a
+  Basketball Match today — log your stats") that expands into a quick form for that sport's
+  per-game stats (see `GAME_METRIC_KEYS_BY_SPORT` in `metrics.py` — e.g. points/rebounds/assists
+  for Basketball, hits/RBIs/strikeouts for Baseball, aces/unforced errors for Tennis, etc.) — these
+  save into Your Stats like any other metric, so they also show up in the leaderboard and
+  projections.
 
 ## Data & storage
 

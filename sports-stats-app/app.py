@@ -14,7 +14,7 @@ from flask import Flask, jsonify, render_template, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
-from metrics import SPORT_METRICS, metric_lookup, SOCCER_GAME_METRIC_KEYS
+from metrics import SPORT_METRICS, metric_lookup, GAME_METRIC_KEYS_BY_SPORT
 
 
 def resource_path(relative_path):
@@ -276,7 +276,7 @@ def auth_me():
 
 @app.route("/api/metrics/catalog")
 def metrics_catalog():
-    return jsonify({"sports": SPORT_METRICS})
+    return jsonify({"sports": SPORT_METRICS, "game_metric_keys": GAME_METRIC_KEYS_BY_SPORT})
 
 
 # ---------- Stats logging ----------
@@ -323,19 +323,29 @@ def stats_me():
 def create_event():
     payload = request.get_json(silent=True) or {}
     event_date = (payload.get("event_date") or "").strip()
+    event_time = (payload.get("event_time") or "").strip() or None
     event_type = payload.get("event_type")
+    sport = payload.get("sport")
     opponent = (payload.get("opponent") or "").strip() or None
     notes = (payload.get("notes") or "").strip() or None
 
     if event_type not in ("match", "practice"):
         return jsonify({"error": "event_type must be 'match' or 'practice'."}), 400
+    if sport not in GAME_METRIC_KEYS_BY_SPORT:
+        return jsonify({"error": "Unknown or unsupported sport."}), 400
     try:
         datetime.strptime(event_date, "%Y-%m-%d")
     except ValueError:
         return jsonify({"error": "event_date must be YYYY-MM-DD."}), 400
+    if event_time is not None:
+        try:
+            datetime.strptime(event_time, "%H:%M")
+        except ValueError:
+            return jsonify({"error": "event_time must be HH:MM."}), 400
 
     event_id = db.add_event(
-        session["user_id"], event_date, event_type, opponent, notes, datetime.now().isoformat()
+        session["user_id"], event_date, event_type, sport, opponent, notes, datetime.now().isoformat(),
+        event_time=event_time,
     )
     return jsonify({"id": event_id})
 
@@ -365,18 +375,21 @@ def delete_event_route(event_id):
 @app.route("/api/events/<int:event_id>/log", methods=["POST"])
 @login_required
 def log_event_stats(event_id):
-    if not db.get_event(event_id, session["user_id"]):
+    event = db.get_event(event_id, session["user_id"])
+    if not event:
         return jsonify({"error": "Event not found."}), 404
 
+    sport = event["sport"]
+    valid_keys = GAME_METRIC_KEYS_BY_SPORT.get(sport, [])
     payload = request.get_json(silent=True) or {}
     values = payload.get("values") or {}
     recorded_at = datetime.now().isoformat()
 
     saved = 0
     for metric_key, raw_value in values.items():
-        if metric_key not in SOCCER_GAME_METRIC_KEYS or raw_value in (None, ""):
+        if metric_key not in valid_keys or raw_value in (None, ""):
             continue
-        metric = metric_lookup("Soccer", metric_key)
+        metric = metric_lookup(sport, metric_key)
         if not metric:
             continue
         try:
@@ -384,7 +397,7 @@ def log_event_stats(event_id):
         except (TypeError, ValueError):
             continue
         db.add_stat_log(
-            session["user_id"], "Soccer", metric_key, metric["label"], metric["unit"], metric["direction"],
+            session["user_id"], sport, metric_key, metric["label"], metric["unit"], metric["direction"],
             value, recorded_at, 0,
         )
         saved += 1

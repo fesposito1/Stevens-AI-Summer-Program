@@ -58,13 +58,24 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 event_date TEXT NOT NULL,
+                event_time TEXT,
                 event_type TEXT NOT NULL,
+                sport TEXT NOT NULL DEFAULT 'Soccer',
                 opponent TEXT,
                 notes TEXT,
                 logged INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             )
         """)
+        # Migrations for databases created before event_time / sport existed.
+        try:
+            conn.execute("ALTER TABLE events ADD COLUMN event_time TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE events ADD COLUMN sport TEXT NOT NULL DEFAULT 'Soccer'")
+        except sqlite3.OperationalError:
+            pass
 
 
 def create_user(username, password_hash, created_at):
@@ -107,12 +118,12 @@ def get_stats_for_user(user_id, metric_key=None):
         return [dict(r) for r in rows]
 
 
-def add_event(user_id, event_date, event_type, opponent, notes, created_at):
+def add_event(user_id, event_date, event_type, sport, opponent, notes, created_at, event_time=None):
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO events (user_id, event_date, event_type, opponent, notes, logged, created_at)
-               VALUES (?, ?, ?, ?, ?, 0, ?)""",
-            (user_id, event_date, event_type, opponent, notes, created_at),
+            """INSERT INTO events (user_id, event_date, event_time, event_type, sport, opponent, notes, logged, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+            (user_id, event_date, event_time, event_type, sport, opponent, notes, created_at),
         )
         return cur.lastrowid
 
@@ -120,7 +131,7 @@ def add_event(user_id, event_date, event_type, opponent, notes, created_at):
 def get_events_for_user(user_id):
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM events WHERE user_id = ? ORDER BY event_date ASC",
+            "SELECT * FROM events WHERE user_id = ? ORDER BY event_date ASC, event_time ASC",
             (user_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -129,7 +140,7 @@ def get_events_for_user(user_id):
 def get_events_on_date(user_id, event_date):
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM events WHERE user_id = ? AND event_date = ? ORDER BY id ASC",
+            "SELECT * FROM events WHERE user_id = ? AND event_date = ? ORDER BY event_time ASC, id ASC",
             (user_id, event_date),
         ).fetchall()
         return [dict(r) for r in rows]
