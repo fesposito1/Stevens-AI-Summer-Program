@@ -1,6 +1,12 @@
 let metricsCatalog = {};
 let gameMetricKeysBySport = {};
 let currentUsername = null;
+let currentIsAdmin = false;
+
+const ALL_TAB_IDS = [
+  "tab-home", "tab-your-stats", "tab-calendar", "tab-player-stats", "tab-compare",
+  "tab-leaderboard", "tab-projections", "tab-coach", "tab-admin",
+];
 
 window.addEventListener("DOMContentLoaded", init);
 
@@ -22,7 +28,7 @@ async function checkAuth() {
   const res = await fetch("/api/auth/me");
   const data = await res.json();
   if (data.username) {
-    showApp(data.username);
+    showApp(data.username, data.is_admin);
   } else {
     showAuthScreen();
   }
@@ -30,17 +36,36 @@ async function checkAuth() {
 
 // ---------- Auth screen ----------
 
+function showAuthPanel(name) {
+  document.getElementById("login-form").classList.toggle("hidden", name !== "login");
+  document.getElementById("signup-form").classList.toggle("hidden", name !== "signup");
+  document.getElementById("forgot-username-form").classList.toggle("hidden", name !== "forgot-username");
+  document.getElementById("forgot-reset-form").classList.toggle("hidden", name !== "forgot-reset");
+  showAuthMessage("");
+}
+
 function setupAuthUI() {
   document.querySelectorAll(".auth-tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
-      const target = btn.dataset.authTab;
-      document.getElementById("login-form").classList.toggle("hidden", target !== "login");
-      document.getElementById("signup-form").classList.toggle("hidden", target !== "signup");
-      showAuthMessage("");
+      showAuthPanel(btn.dataset.authTab);
     });
   });
+
+  document.getElementById("forgot-link").addEventListener("click", (event) => {
+    event.preventDefault();
+    document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.remove("active"));
+    showAuthPanel("forgot-username");
+  });
+
+  function backToLogin(event) {
+    event.preventDefault();
+    document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.authTab === "login"));
+    showAuthPanel("login");
+  }
+  document.getElementById("back-to-login-link").addEventListener("click", backToLogin);
+  document.getElementById("back-to-login-link-2").addEventListener("click", backToLogin);
 
   document.getElementById("login-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -56,30 +81,70 @@ function setupAuthUI() {
       showAuthMessage(data.error || "Login failed.");
       return;
     }
-    showApp(data.username);
+    showApp(data.username, data.is_admin);
   });
 
   document.getElementById("signup-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const username = document.getElementById("signup-username").value.trim();
     const password = document.getElementById("signup-password").value;
+    const security_answer = document.getElementById("signup-security-answer").value.trim();
     const res = await fetch("/api/auth/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, security_answer }),
     });
     const data = await res.json();
     if (!res.ok) {
       showAuthMessage(data.error || "Sign up failed.");
       return;
     }
-    showApp(data.username);
+    showApp(data.username, data.is_admin);
+  });
+
+  document.getElementById("forgot-username-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("forgot-username").value.trim();
+    const res = await fetch("/api/auth/forgot/question", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAuthMessage(data.error || "Couldn't find that account.");
+      return;
+    }
+    document.getElementById("forgot-reset-form").dataset.username = username;
+    document.getElementById("forgot-question-text").textContent = data.question;
+    showAuthPanel("forgot-reset");
+  });
+
+  document.getElementById("forgot-reset-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = event.target.dataset.username;
+    const answer = document.getElementById("forgot-answer").value.trim();
+    const new_password = document.getElementById("forgot-new-password").value;
+    const res = await fetch("/api/auth/forgot/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, answer, new_password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAuthMessage(data.error || "Reset failed.");
+      return;
+    }
+    document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.authTab === "login"));
+    showAuthPanel("login");
+    showAuthMessage("Password reset — log in with your new password.");
   });
 
   document.getElementById("logout-btn").addEventListener("click", async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     currentUsername = null;
-    ["tab-home", "tab-your-stats", "tab-calendar", "tab-player-stats", "tab-compare", "tab-leaderboard", "tab-projections", "tab-coach"].forEach((id) => {
+    currentIsAdmin = false;
+    ALL_TAB_IDS.forEach((id) => {
       const el = document.getElementById(id);
       el.innerHTML = "";
       delete el.dataset.initialized;
@@ -94,11 +159,13 @@ function showAuthMessage(text) {
   el.classList.toggle("hidden", !text);
 }
 
-function showApp(username) {
+function showApp(username, isAdmin) {
   currentUsername = username;
+  currentIsAdmin = !!isAdmin;
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("current-username").textContent = username;
+  document.getElementById("admin-tab-btn").classList.toggle("hidden", !currentIsAdmin);
   activateTab("home");
 }
 
@@ -116,6 +183,7 @@ function setupTabUI() {
 }
 
 function activateTab(tab) {
+  if (tab === "admin" && !currentIsAdmin) return;
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
 
@@ -127,6 +195,7 @@ function activateTab(tab) {
   if (tab === "leaderboard") renderLeaderboardPanel();
   if (tab === "projections") renderProjectionsPanel();
   if (tab === "coach") renderCoachPanel();
+  if (tab === "admin") renderAdminPanel();
 }
 
 // ---------- Shared detail-rendering helpers ----------
@@ -238,7 +307,7 @@ function renderTeamDetailInto(container, data) {
       <h3>Overview</h3>
       <p><strong>Stadium:</strong> ${info.stadium || "-"} &nbsp; <strong>Formed:</strong> ${info.formed || "-"}</p>
       ${info.website ? `<p><strong>Website:</strong> ${info.website}</p>` : ""}
-      <p class="description">${info.description ? info.description.slice(0, 600) + (info.description.length > 600 ? "..." : "") : ""}</p>
+      <div class="description-scroll"><p class="description">${info.description || ""}</p></div>
     </div>
 
     <div class="category">
@@ -284,7 +353,7 @@ function renderPlayerDetailInto(container, data) {
         <strong>Status:</strong> ${info.status || "-"}
       </p>
       ${info.height || info.weight ? `<p><strong>Height:</strong> ${info.height || "-"} &nbsp; <strong>Weight:</strong> ${info.weight || "-"}</p>` : ""}
-      <p class="description">${info.description ? info.description.slice(0, 600) + (info.description.length > 600 ? "..." : "") : ""}</p>
+      <div class="description-scroll"><p class="description">${info.description || ""}</p></div>
     </div>
 
     <div class="category">
@@ -304,17 +373,49 @@ function renderFullDetail(container, item, data, onBack) {
   document.getElementById("back-link").addEventListener("click", onBack);
 }
 
+const API_SPORT_TO_METRICS_SPORT = {
+  Soccer: "Soccer",
+  Basketball: "Basketball",
+  "American Football": "Football",
+  "Ice Hockey": "Hockey",
+  Baseball: "Baseball",
+  Golf: "Golf",
+  Tennis: "Tennis",
+  Fighting: "MMA/Boxing",
+  Athletics: "Running",
+  "Track and Field": "Running",
+};
+
+function mapApiSportToMetricsSport(apiSport) {
+  if (!apiSport) return null;
+  if (API_SPORT_TO_METRICS_SPORT[apiSport]) return API_SPORT_TO_METRICS_SPORT[apiSport];
+  if (gameMetricKeysBySport[apiSport]) return apiSport;
+  return null;
+}
+
 async function renderCompareDetail(container, item, data, onBack) {
   const info = data.info;
+  const mappedSport = mapApiSportToMetricsSport(info.sport);
+  const skillKeys = mappedSport ? gameMetricKeysBySport[mappedSport] || [] : [];
+  const skillMetrics = mappedSport
+    ? (metricsCatalog[mappedSport] || []).filter((m) => skillKeys.includes(m.key))
+    : [];
 
   const statsRes = await fetch("/api/stats/me");
   const statsData = await statsRes.json();
-  const bio = {};
+  const latest = {};
   (statsData.stats || []).forEach((s) => {
-    if (s.sport === "Bio" && !(s.metric_key in bio)) {
-      bio[s.metric_key] = s.value;
-    }
+    const key = `${s.sport}|${s.metric_key}`;
+    if (!(key in latest)) latest[key] = s.value;
   });
+
+  const hasSkills = mappedSport && skillMetrics.length > 0;
+  const skillInputsHtml = skillMetrics
+    .map((m) => {
+      const prefill = latest[`${mappedSport}|${m.key}`];
+      return `<label>${m.label}${m.unit ? ` (${m.unit})` : ""}<input type="number" step="any" id="cmp-${m.key}" value="${prefill ?? ""}" placeholder="e.g. 0" /></label>`;
+    })
+    .join("");
 
   container.innerHTML = `
     ${backLinkHtml()}
@@ -327,50 +428,48 @@ async function renderCompareDetail(container, item, data, onBack) {
     </div>
 
     <div class="category">
-      <h3>Compare Your Bio Stats</h3>
-      <div class="compare-form">
-        <label>Height (cm)<input type="number" id="cmp-height" value="${bio.height_cm ?? ""}" placeholder="e.g. 180" /></label>
-        <label>Weight (kg)<input type="number" id="cmp-weight" value="${bio.weight_kg ?? ""}" placeholder="e.g. 75" /></label>
-        <label>Age (years)<input type="number" id="cmp-age" value="${bio.age ?? ""}" placeholder="e.g. 25" /></label>
-      </div>
-      <div class="compare-form">
-        <button type="button" id="cmp-btn">Compare</button>
-        <button type="button" id="cmp-save-btn">Save as My Bio Stats</button>
-      </div>
-      <p class="empty-note">${
-        Object.keys(bio).length
-          ? "Prefilled from your last saved Your Stats entries."
-          : "No saved Bio stats yet — log some in Your Stats, or just type values below."
-      }</p>
-      <div id="cmp-save-msg" class="empty-note hidden"></div>
-      <div id="cmp-result"></div>
+      <h3>${hasSkills ? `Compare Your ${mappedSport} Skills` : "Compare"}</h3>
+      ${
+        hasSkills
+          ? `
+        <div class="compare-form">${skillInputsHtml}</div>
+        <div class="compare-form">
+          <button type="button" id="cmp-btn">Compare</button>
+          <button type="button" id="cmp-save-btn">Save to My Stats</button>
+        </div>
+        <p class="empty-note">
+          Your values are prefilled from your latest logged stats. TheSportsDB's free tier doesn't
+          include ${info.name}'s personal game stats, so their side will note that instead of a
+          made-up number.
+        </p>
+        <div id="cmp-save-msg" class="empty-note hidden"></div>
+        <div id="cmp-result"></div>
+      `
+          : `<p class="empty-note">No skill stats are configured for ${info.sport || "this sport"} yet.</p>`
+      }
     </div>
   `;
   container.classList.remove("hidden");
   document.getElementById("back-link").addEventListener("click", onBack);
 
+  if (!hasSkills) return;
+
   function runCompare() {
-    const you = {
-      height: parseFloat(document.getElementById("cmp-height").value),
-      weight: parseFloat(document.getElementById("cmp-weight").value),
-      age: parseFloat(document.getElementById("cmp-age").value),
-    };
-    const rows = [
-      compareRow("Height", you.height, info.height_cm, " cm", info.name),
-      compareRow("Weight", you.weight, info.weight_kg, " kg", info.name),
-      compareRow("Age", you.age, info.age, " yrs", info.name),
-    ].join("");
+    const rows = skillMetrics
+      .map((m) => {
+        const youVal = parseFloat(document.getElementById(`cmp-${m.key}`).value);
+        return compareRow(m.label, youVal, null, m.unit ? ` ${m.unit}` : "", info.name);
+      })
+      .join("");
     document.getElementById("cmp-result").innerHTML = rows;
   }
 
   document.getElementById("cmp-btn").addEventListener("click", runCompare);
 
   document.getElementById("cmp-save-btn").addEventListener("click", async () => {
-    const entries = [
-      { sport: "Bio", metric_key: "height_cm", value: document.getElementById("cmp-height").value },
-      { sport: "Bio", metric_key: "weight_kg", value: document.getElementById("cmp-weight").value },
-      { sport: "Bio", metric_key: "age", value: document.getElementById("cmp-age").value },
-    ].filter((e) => e.value !== "");
+    const entries = skillMetrics
+      .map((m) => ({ sport: mappedSport, metric_key: m.key, value: document.getElementById(`cmp-${m.key}`).value }))
+      .filter((e) => e.value !== "");
 
     for (const entry of entries) {
       await fetch("/api/stats", {
@@ -386,7 +485,7 @@ async function renderCompareDetail(container, item, data, onBack) {
     setTimeout(() => msg.classList.add("hidden"), 2500);
   });
 
-  if (bio.height_cm !== undefined || bio.weight_kg !== undefined || bio.age !== undefined) {
+  if (skillMetrics.some((m) => latest[`${mappedSport}|${m.key}`] !== undefined)) {
     runCompare();
   }
 }
@@ -414,6 +513,7 @@ function setupSearchWidget({ formId, inputId, resultsId, detailId, messageId, ty
     event.preventDefault();
     const query = input.value.trim();
     if (!query) return;
+    input.value = "";
 
     clearEl(detailEl);
     clearEl(resultsEl);
@@ -1259,4 +1359,114 @@ function renderCoachPanel() {
       showCoachMessage("Something went wrong reaching the coach.");
     }
   });
+}
+
+// ---------- Admin panel ----------
+
+async function renderAdminPanel() {
+  const panel = document.getElementById("tab-admin");
+
+  panel.innerHTML = `
+    <div class="category">
+      <h3>Users</h3>
+      <div id="admin-message" class="message hidden"></div>
+      <div id="admin-users"></div>
+    </div>
+    <div class="category">
+      <h3>AI Coach Prompt</h3>
+      <p class="empty-note">Edit the system instructions given to the Coach for every conversation.</p>
+      <textarea id="admin-coach-prompt" class="admin-prompt-textarea" rows="6"></textarea>
+      <button type="button" id="admin-save-prompt-btn">Save Prompt</button>
+    </div>
+  `;
+
+  function showAdminMessage(text) {
+    const el = document.getElementById("admin-message");
+    el.textContent = text;
+    el.classList.toggle("hidden", !text);
+    if (text) setTimeout(() => el.classList.add("hidden"), 3000);
+  }
+
+  async function loadUsers() {
+    const res = await fetch("/api/admin/users");
+    const data = await res.json();
+    const container = document.getElementById("admin-users");
+    if (!res.ok) {
+      container.innerHTML = `<p class="empty-note">${data.error || "Couldn't load users."}</p>`;
+      return;
+    }
+    container.innerHTML = `
+      <table>
+        <thead><tr><th>Username</th><th>Admin</th><th>Created</th><th>Last Login</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${data.users.map((u) => `
+            <tr>
+              <td>${u.username}</td>
+              <td>${u.is_admin ? "Yes" : "-"}</td>
+              <td>${new Date(u.created_at).toLocaleString()}</td>
+              <td>${u.last_login ? new Date(u.last_login).toLocaleString() : "Never"}</td>
+              <td class="admin-actions">
+                <button type="button" class="admin-reset-btn" data-id="${u.id}" data-username="${u.username}">Reset Password</button>
+                <button type="button" class="admin-rename-btn" data-id="${u.id}" data-username="${u.username}">Rename</button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+
+    container.querySelectorAll(".admin-reset-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const newPassword = prompt(`New password for ${btn.dataset.username} (min 6 chars):`);
+        if (!newPassword) return;
+        const res = await fetch(`/api/admin/users/${btn.dataset.id}/reset-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_password: newPassword }),
+        });
+        const data = await res.json();
+        showAdminMessage(res.ok ? "Password reset." : data.error || "Failed.");
+      });
+    });
+
+    container.querySelectorAll(".admin-rename-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const newUsername = prompt(`New username for ${btn.dataset.username}:`, btn.dataset.username);
+        if (!newUsername || newUsername === btn.dataset.username) return;
+        const res = await fetch(`/api/admin/users/${btn.dataset.id}/rename`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_username: newUsername }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAdminMessage(data.error || "Failed.");
+          return;
+        }
+        showAdminMessage("Renamed.");
+        if (btn.dataset.username === currentUsername) {
+          currentUsername = newUsername;
+          document.getElementById("current-username").textContent = newUsername;
+        }
+        loadUsers();
+      });
+    });
+  }
+
+  const settingsRes = await fetch("/api/admin/settings");
+  const settingsData = await settingsRes.json();
+  document.getElementById("admin-coach-prompt").value = settingsData.coach_system_prompt || "";
+
+  document.getElementById("admin-save-prompt-btn").addEventListener("click", async () => {
+    const coach_system_prompt = document.getElementById("admin-coach-prompt").value;
+    const res = await fetch("/api/admin/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coach_system_prompt }),
+    });
+    const data = await res.json();
+    showAdminMessage(res.ok ? "Prompt saved." : data.error || "Failed.");
+  });
+
+  loadUsers();
 }

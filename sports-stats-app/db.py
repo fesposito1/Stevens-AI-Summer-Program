@@ -86,6 +86,16 @@ def init_db():
                 )
             """)
             conn.execute("ALTER TABLE stat_logs ADD COLUMN IF NOT EXISTS rest_days REAL DEFAULT 0")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS security_question TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS security_answer_hash TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin INTEGER DEFAULT 0")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TEXT")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS events (
                     id SERIAL PRIMARY KEY,
@@ -125,11 +135,12 @@ def init_db():
                     rest_days REAL DEFAULT 0
                 )
             """)
-            # Migration for databases created before rest_days existed.
-            try:
-                conn.execute("ALTER TABLE stat_logs ADD COLUMN rest_days REAL DEFAULT 0")
-            except sqlite3.OperationalError:
-                pass
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,22 +155,30 @@ def init_db():
                     created_at TEXT NOT NULL
                 )
             """)
-            # Migrations for databases created before event_time / sport existed.
-            try:
-                conn.execute("ALTER TABLE events ADD COLUMN event_time TEXT")
-            except sqlite3.OperationalError:
-                pass
-            try:
-                conn.execute("ALTER TABLE events ADD COLUMN sport TEXT NOT NULL DEFAULT 'Soccer'")
-            except sqlite3.OperationalError:
-                pass
+            # Migrations for databases created before these columns existed.
+            for stmt in (
+                "ALTER TABLE stat_logs ADD COLUMN rest_days REAL DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN security_question TEXT",
+                "ALTER TABLE users ADD COLUMN security_answer_hash TEXT",
+                "ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN last_login TEXT",
+                "ALTER TABLE events ADD COLUMN event_time TEXT",
+                "ALTER TABLE events ADD COLUMN sport TEXT NOT NULL DEFAULT 'Soccer'",
+            ):
+                try:
+                    conn.execute(stmt)
+                except sqlite3.OperationalError:
+                    pass
 
 
-def create_user(username, password_hash, created_at):
+def create_user(username, password_hash, created_at, security_question=None,
+                security_answer_hash=None, is_admin=0):
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-            (username, password_hash, created_at),
+            """INSERT INTO users (username, password_hash, created_at, security_question,
+                                   security_answer_hash, is_admin)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (username, password_hash, created_at, security_question, security_answer_hash, is_admin),
         )
         row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
         return row["id"]
@@ -169,6 +188,57 @@ def get_user_by_username(username):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         return dict(row) if row else None
+
+
+def get_user_by_id(user_id):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_all_users():
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, username, created_at, is_admin, last_login FROM users ORDER BY username"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_user_password(user_id, password_hash):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+
+
+def rename_user(user_id, new_username):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET username = ? WHERE id = ?", (new_username, user_id))
+
+
+def update_last_login(user_id, timestamp):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET last_login = ? WHERE id = ?", (timestamp, user_id))
+
+
+def get_setting(key, default=None):
+    with get_conn() as conn:
+        row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+
+def set_setting(key, value):
+    with get_conn() as conn:
+        if USE_POSTGRES:
+            conn.execute(
+                """INSERT INTO app_settings (key, value) VALUES (?, ?)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""",
+                (key, value),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
 
 
 def add_stat_log(user_id, sport, metric_key, label, unit, direction, value, recorded_at, rest_days=0):

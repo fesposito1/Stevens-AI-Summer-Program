@@ -75,7 +75,13 @@ requirements.txt     Local-dev Python dependencies (Flask, requests, pywebview, 
 ## Features
 
 - **Login / Sign up** — accounts are local to your machine (SQLite), passwords hashed with
-  werkzeug's `generate_password_hash`.
+  werkzeug's `generate_password_hash`. Sign up also sets a security question answer (fixed
+  question: "What sport do you play or follow most?") used for password resets.
+- **Forgot password** — from the login screen, enter your username to see your security
+  question, then answer it plus a new password to reset — no email required.
+- **Admin panel** — a seeded `admin` account (see "Admin account" below) can view all users
+  (including last login time), reset anyone's password, rename usernames, and edit the AI
+  Coach's system prompt live without redeploying.
 - **Your Stats** — log sport-specific metrics over time (mile time, 40-yard dash, vertical jump,
   bench press, batting average, driving distance, etc. — see `metrics.py` for the full catalog
   per sport) and view your history.
@@ -102,6 +108,20 @@ requirements.txt     Local-dev Python dependencies (Flask, requests, pywebview, 
   projections.
 - **AI Coach** — a free-form chat coach (Google Gemini) that gives advice based on your actual
   logged stats. Not scripted/pre-programmed responses — see "AI Coach setup" below to enable it.
+
+## Admin account
+
+A single admin account is auto-created the first time the app starts (in `ensure_admin_account()`
+in `app.py`), if one doesn't already exist:
+
+- Username: `admin`
+- Password: `123456`
+
+Log in as admin to see the **Admin** tab (hidden for everyone else) — manage users, reset
+passwords, rename usernames, and edit the Coach's system prompt. **Change this password** (via
+the Admin tab's own "Reset Password" button on the `admin` row, or the Forgot Password flow)
+once you're using this for anything beyond a short private demo — it's a known default in this
+public repo.
 
 ## AI Coach setup
 

@@ -63,6 +63,31 @@ GEMINI_MODEL = "gemini-flash-latest"
 COACH_COOLDOWN_SECONDS = 2.0
 _coach_last_call = {}
 _coach_lock = Lock()
+DEFAULT_COACH_SYSTEM_PROMPT = (
+    "You are an encouraging, knowledgeable sports performance coach embedded in a "
+    "stats-tracking app. Give specific, actionable advice based on the athlete's own "
+    "logged stats below — reference real numbers when relevant. Keep replies "
+    "conversational and concise (roughly 3-6 sentences) unless asked for more detail. "
+    "You are not a doctor; suggest consulting one for injury or medical concerns."
+)
+
+SECURITY_QUESTION = "What sport do you play or follow most?"
+ADMIN_USERNAME = "admin"
+ADMIN_DEFAULT_PASSWORD = "123456"
+
+
+def ensure_admin_account():
+    if db.get_user_by_username(ADMIN_USERNAME):
+        return
+    db.create_user(
+        ADMIN_USERNAME,
+        generate_password_hash(ADMIN_DEFAULT_PASSWORD, method="pbkdf2:sha256"),
+        datetime.now().isoformat(),
+        is_admin=1,
+    )
+
+
+ensure_admin_account()
 
 
 class RateLimitError(Exception):
@@ -74,6 +99,17 @@ def login_required(f):
     def wrapper(*args, **kwargs):
         if "user_id" not in session:
             return jsonify({"error": "Login required"}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if "user_id" not in session:
+            return jsonify({"error": "Login required"}), 401
+        if not session.get("is_admin"):
+            return jsonify({"error": "Admin access required"}), 403
         return f(*args, **kwargs)
     return wrapper
 
@@ -266,21 +302,29 @@ def signup():
     payload = request.get_json(silent=True) or {}
     username = (payload.get("username") or "").strip()
     password = payload.get("password") or ""
+    security_answer = (payload.get("security_answer") or "").strip()
 
     if len(username) < 3:
         return jsonify({"error": "Username must be at least 3 characters."}), 400
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters."}), 400
+    if not security_answer:
+        return jsonify({"error": "A security question answer is required (used for password resets)."}), 400
     if db.get_user_by_username(username):
         return jsonify({"error": "That username is already taken."}), 409
 
     user_id = db.create_user(
-        username, generate_password_hash(password, method="pbkdf2:sha256"), datetime.now().isoformat()
+        username,
+        generate_password_hash(password, method="pbkdf2:sha256"),
+        datetime.now().isoformat(),
+        security_question=SECURITY_QUESTION,
+        security_answer_hash=generate_password_hash(security_answer.lower(), method="pbkdf2:sha256"),
     )
     session.permanent = True
     session["user_id"] = user_id
     session["username"] = username
-    return jsonify({"username": username})
+    session["is_admin"] = False
+    return jsonify({"username": username, "is_admin": False})
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -293,10 +337,13 @@ def login():
     if not user or not check_password_hash(user["password_hash"], password):
         return jsonify({"error": "Invalid username or password."}), 401
 
+    db.update_last_login(user["id"], datetime.now().isoformat())
+
     session.permanent = True
     session["user_id"] = user["id"]
     session["username"] = user["username"]
-    return jsonify({"username": user["username"]})
+    session["is_admin"] = bool(user.get("is_admin"))
+    return jsonify({"username": user["username"], "is_admin": bool(user.get("is_admin"))})
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -309,7 +356,95 @@ def logout():
 def auth_me():
     if "user_id" not in session:
         return jsonify({"username": None})
-    return jsonify({"username": session.get("username")})
+    return jsonify({"username": session.get("username"), "is_admin": bool(session.get("is_admin"))})
+
+
+# ---------- Forgot password ----------
+
+@app.route("/api/auth/forgot/question", methods=["POST"])
+def forgot_question():
+    payload = request.get_json(silent=True) or {}
+    username = (payload.get("username") or "").strip()
+    user = db.get_user_by_username(username)
+    if not user or not user.get("security_question"):
+        return jsonify({"error": "No account with a security question found for that username."}), 404
+    return jsonify({"question": user["security_question"]})
+
+
+@app.route("/api/auth/forgot/reset", methods=["POST"])
+def forgot_reset():
+    payload = request.get_json(silent=True) or {}
+    username = (payload.get("username") or "").strip()
+    answer = (payload.get("answer") or "").strip()
+    new_password = payload.get("new_password") or ""
+
+    if len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters."}), 400
+
+    user = db.get_user_by_username(username)
+    if not user or not user.get("security_answer_hash"):
+        return jsonify({"error": "No account with a security question found for that username."}), 404
+    if not check_password_hash(user["security_answer_hash"], answer.lower()):
+        return jsonify({"error": "That answer doesn't match."}), 401
+
+    db.update_user_password(user["id"], generate_password_hash(new_password, method="pbkdf2:sha256"))
+    return jsonify({"ok": True})
+
+
+# ---------- Admin ----------
+
+@app.route("/api/admin/users")
+@admin_required
+def admin_list_users():
+    return jsonify({"users": db.get_all_users()})
+
+
+@app.route("/api/admin/users/<int:user_id>/reset-password", methods=["POST"])
+@admin_required
+def admin_reset_password(user_id):
+    payload = request.get_json(silent=True) or {}
+    new_password = payload.get("new_password") or ""
+    if len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters."}), 400
+    if not db.get_user_by_id(user_id):
+        return jsonify({"error": "User not found."}), 404
+    db.update_user_password(user_id, generate_password_hash(new_password, method="pbkdf2:sha256"))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<int:user_id>/rename", methods=["POST"])
+@admin_required
+def admin_rename_user(user_id):
+    payload = request.get_json(silent=True) or {}
+    new_username = (payload.get("new_username") or "").strip()
+    if len(new_username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters."}), 400
+    if not db.get_user_by_id(user_id):
+        return jsonify({"error": "User not found."}), 404
+    if db.get_user_by_username(new_username):
+        return jsonify({"error": "That username is already taken."}), 409
+    db.rename_user(user_id, new_username)
+    if session.get("user_id") == user_id:
+        session["username"] = new_username
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/settings")
+@admin_required
+def admin_get_settings():
+    return jsonify({
+        "coach_system_prompt": db.get_setting("coach_system_prompt", DEFAULT_COACH_SYSTEM_PROMPT),
+    })
+
+
+@app.route("/api/admin/settings", methods=["POST"])
+@admin_required
+def admin_set_settings():
+    payload = request.get_json(silent=True) or {}
+    prompt = payload.get("coach_system_prompt")
+    if prompt is not None:
+        db.set_setting("coach_system_prompt", prompt)
+    return jsonify({"ok": True})
 
 
 # ---------- Metrics catalog ----------
@@ -573,17 +708,11 @@ def coach_chat():
     ]
 
     try:
+        system_prompt = db.get_setting("coach_system_prompt", DEFAULT_COACH_SYSTEM_PROMPT)
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(
             GEMINI_MODEL,
-            system_instruction=(
-                "You are an encouraging, knowledgeable sports performance coach embedded in a "
-                "stats-tracking app. Give specific, actionable advice based on the athlete's own "
-                "logged stats below — reference real numbers when relevant. Keep replies "
-                "conversational and concise (roughly 3-6 sentences) unless asked for more detail. "
-                "You are not a doctor; suggest consulting one for injury or medical concerns.\n\n"
-                + context_summary
-            ),
+            system_instruction=system_prompt + "\n\n" + context_summary,
         )
         chat = model.start_chat(history=gemini_history)
         response = chat.send_message(message)
