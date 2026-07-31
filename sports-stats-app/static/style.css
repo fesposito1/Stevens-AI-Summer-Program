@@ -509,19 +509,39 @@ th {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 20px;
   box-shadow: var(--shadow-lg);
-  padding: 2.2rem 2rem;
+  padding: 2.4rem 2.2rem;
   text-align: center;
   animation: fadeSlideUp 0.4s var(--ease) both;
 }
 
+.auth-logo {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.7rem;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+}
+
 .auth-box h1 {
   font-size: 1.5rem;
-  margin-bottom: 1.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.auth-tagline {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  margin: 0 0 1.6rem;
 }
 
 .auth-tabs {
@@ -567,12 +587,14 @@ th {
 
 .auth-form input {
   height: 44px;
-  padding: 0 1rem;
+  width: 100%;
+  padding: 0 1rem 0 2.6rem;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
   font-size: 0.95rem;
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease), background-color 0.2s var(--ease);
 }
 
 .auth-form input:focus {
@@ -580,6 +602,30 @@ th {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
   background: var(--panel);
+}
+
+.input-group {
+  position: relative;
+  display: block;
+  text-align: left;
+}
+
+.input-icon {
+  position: absolute;
+  left: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.95rem;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.auth-microcopy {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin: -0.2rem 0 0;
+  text-align: left;
 }
 
 .auth-form-links {
