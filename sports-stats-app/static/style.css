@@ -22,7 +22,13 @@
 body {
   margin: 0;
   font-family: "Inter", -apple-system, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
+  background: repeating-linear-gradient(
+    45deg,
+    var(--bg) 0px,
+    var(--bg) 60px,
+    #EFF6F1 60px,
+    #EFF6F1 120px
+  );
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -466,6 +472,29 @@ th {
 }
 
 /* ---------- Auth screen ---------- */
+
+.sports-decor {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.sports-decor-item {
+  position: absolute;
+  font-size: 3.2rem;
+  filter: grayscale(0.85);
+  opacity: 0.14;
+}
+
+.deco-1 { top: 8%;    left: 8%;   font-size: 4.2rem; transform: rotate(-10deg); }
+.deco-2 { top: 14%;   right: 7%;  font-size: 3.6rem; transform: rotate(8deg); }
+.deco-3 { bottom: 10%; left: 6%;  font-size: 4rem;   transform: rotate(6deg); }
+.deco-4 { bottom: 16%; right: 10%; font-size: 3.4rem; transform: rotate(-8deg); }
+.deco-5 { top: 46%;   left: 3%;   font-size: 3.2rem; transform: rotate(-5deg); }
+.deco-6 { top: 32%;   right: 3%;  font-size: 3.4rem; transform: rotate(12deg); }
+.deco-7 { bottom: 32%; left: 45%; font-size: 3rem;   transform: rotate(-6deg); }
 
 .auth-screen {
   min-height: 100vh;
@@ -1402,6 +1431,35 @@ th {
   padding: 0.25rem 0.7rem;
   border-radius: 999px;
   box-shadow: var(--shadow-sm);
+}
+
+.pricing-coming-soon {
+  margin: 0.2rem 0 1.2rem;
+  padding-top: 0.8rem;
+  border-top: 1px dashed var(--border);
+}
+
+.pricing-coming-soon-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  margin-bottom: 0.6rem;
+}
+
+.pricing-features-soon {
+  margin-bottom: 0;
+}
+
+.pricing-features-soon li {
+  color: var(--muted);
+}
+
+.pricing-features-soon li::before {
+  content: "\25CB";
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .premium-status-card {
