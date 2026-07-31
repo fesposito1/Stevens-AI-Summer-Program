@@ -14,7 +14,33 @@ async function init() {
   await loadMetricsCatalog();
   setupAuthUI();
   setupTabUI();
+  setupAvatarMenu();
   await checkAuth();
+}
+
+// ---------- Avatar dropdown ----------
+
+function setupAvatarMenu() {
+  const btn = document.getElementById("avatar-btn");
+  const dropdown = document.getElementById("avatar-dropdown");
+
+  function closeMenu() {
+    dropdown.classList.add("hidden");
+    btn.setAttribute("aria-expanded", "false");
+  }
+
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const willOpen = dropdown.classList.contains("hidden");
+    dropdown.classList.toggle("hidden", !willOpen);
+    btn.setAttribute("aria-expanded", String(willOpen));
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!dropdown.classList.contains("hidden") && !event.target.closest(".avatar-menu")) {
+      closeMenu();
+    }
+  });
 }
 
 async function loadMetricsCatalog() {
@@ -165,6 +191,7 @@ function showApp(username, isAdmin) {
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("current-username").textContent = username;
+  document.getElementById("avatar-btn").textContent = username.charAt(0).toUpperCase();
   document.getElementById("admin-tab-btn").classList.toggle("hidden", !currentIsAdmin);
   activateTab("home");
 }
@@ -333,8 +360,16 @@ function renderTeamDetailInto(container, data) {
   `;
 }
 
-function renderPlayerDetailInto(container, data) {
+async function renderPlayerDetailInto(container, data, item) {
   const { info, next_events } = data;
+  const playerId = item?.id;
+
+  let isFollowing = false;
+  if (playerId) {
+    const followRes = await fetch("/api/follows");
+    const followData = await followRes.json();
+    isFollowing = (followData.players || []).some((p) => String(p.player_id) === String(playerId));
+  }
 
   container.innerHTML = `
     ${backLinkHtml()}
@@ -344,6 +379,7 @@ function renderPlayerDetailInto(container, data) {
         <h2>${info.name}</h2>
         <div class="result-meta">${info.sport || ""}${info.team ? " · " + info.team : ""}${info.position ? " · " + info.position : ""}</div>
       </div>
+      ${playerId ? `<button type="button" id="follow-btn" class="follow-btn ${isFollowing ? "following" : ""}">${isFollowing ? "★ Following" : "☆ Follow"}</button>` : ""}
     </div>
 
     <div class="category">
@@ -362,13 +398,38 @@ function renderPlayerDetailInto(container, data) {
       ${eventsTable(next_events, false)}
     </div>
   `;
+
+  if (playerId) {
+    document.getElementById("follow-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("follow-btn");
+      if (isFollowing) {
+        await fetch(`/api/follows/${playerId}`, { method: "DELETE" });
+        isFollowing = false;
+      } else {
+        await fetch("/api/follows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            player_id: playerId,
+            name: info.name,
+            sport: info.sport,
+            team: info.team,
+            thumb: info.thumb,
+          }),
+        });
+        isFollowing = true;
+      }
+      btn.textContent = isFollowing ? "★ Following" : "☆ Follow";
+      btn.classList.toggle("following", isFollowing);
+    });
+  }
 }
 
-function renderFullDetail(container, item, data, onBack) {
+async function renderFullDetail(container, item, data, onBack) {
   if (item.type === "team") {
     renderTeamDetailInto(container, data);
   } else {
-    renderPlayerDetailInto(container, data);
+    await renderPlayerDetailInto(container, data, item);
   }
   container.classList.remove("hidden");
   document.getElementById("back-link").addEventListener("click", onBack);
@@ -594,7 +655,7 @@ function setupSearchWidget({ formId, inputId, resultsId, detailId, messageId, ty
       const data = await res.json();
 
       if (res.status === 429) {
-        showMsg(data.error || "Rate limit reached, please wait a moment and try again.");
+        showMsg(data.error || "The sports data API is shared by everyone using this app and just hit its per-minute limit — wait a few seconds and try again.");
         return;
       }
       if (!data.results || data.results.length === 0) {
@@ -638,7 +699,7 @@ function setupSearchWidget({ formId, inputId, resultsId, detailId, messageId, ty
       const data = await res.json();
 
       if (res.status === 429) {
-        showMsg(data.error || "Rate limit reached, please wait a moment and try again.");
+        showMsg(data.error || "The sports data API is shared by everyone using this app and just hit its per-minute limit — wait a few seconds and try again.");
         return;
       }
       if (res.status === 404) {
@@ -775,7 +836,7 @@ function wireGameLogToggle(logBtn, formContainer, eventId, prefix, sport, onSave
 
 // ---------- Home tab ----------
 
-const PIE_COLORS = ["#14458f", "#2f7dc4", "#5aa9e6", "#8fd0f7", "#0a2f6b", "#3a5a8a", "#7ec8e3", "#1e6fb8"];
+const PIE_COLORS = ["#2563EB", "#22C55E", "#F59E0B", "#8B5CF6", "#06B6D4", "#EC4899", "#64748B", "#0F172A"];
 
 function renderPieChart(slices) {
   const total = slices.reduce((sum, s) => sum + s.value, 0);
@@ -807,13 +868,48 @@ function renderPieChart(slices) {
   `;
 }
 
+async function viewPlayerById(playerId) {
+  activateTab("player-stats");
+  const resultsEl = document.getElementById("ps-results");
+  const detailEl = document.getElementById("ps-detail");
+  const messageEl = document.getElementById("ps-message");
+  resultsEl.innerHTML = "";
+  resultsEl.classList.add("hidden");
+  detailEl.innerHTML = "";
+  detailEl.classList.add("hidden");
+  messageEl.textContent = "Loading details...";
+  messageEl.classList.remove("hidden");
+
+  try {
+    const res = await fetch(`/api/player/${playerId}`);
+    const data = await res.json();
+    if (!res.ok) {
+      messageEl.textContent = data.error || "Not found.";
+      return;
+    }
+    messageEl.classList.add("hidden");
+    await renderFullDetail(detailEl, { id: playerId, type: "player" }, data, () => {
+      detailEl.innerHTML = "";
+      detailEl.classList.add("hidden");
+    });
+  } catch (err) {
+    messageEl.textContent = "Something went wrong reaching the server.";
+  }
+}
+
 async function renderHomePanel() {
   const panel = document.getElementById("tab-home");
-  const [res, todayRes] = await Promise.all([fetch("/api/stats/me"), fetch("/api/events/today")]);
+  const [res, todayRes, followRes] = await Promise.all([
+    fetch("/api/stats/me"),
+    fetch("/api/events/today"),
+    fetch("/api/follows"),
+  ]);
   const data = await res.json();
   const todayData = await todayRes.json();
+  const followData = await followRes.json();
   const stats = data.stats || [];
   const dueEvents = (todayData.events || []).filter((e) => !e.logged);
+  const followed = followData.players || [];
 
   const bySport = {};
   stats.forEach((s) => {
@@ -834,7 +930,14 @@ async function renderHomePanel() {
     .filter(([, v]) => v.count >= 2)
     .sort((a, b) => b[1].count - a[1].count);
 
-  let growthHtml = `<p class="empty-note">Log at least 2 entries for the same metric in Your Stats to see a growth trend here.</p>`;
+  let growthHtml = `
+    <div class="analytics-grid">
+      <div class="analytics-card"><div class="analytics-label">Weekly Progress</div><div class="skeleton skeleton-text"></div></div>
+      <div class="analytics-card"><div class="analytics-label">Consistency</div><div class="skeleton skeleton-text"></div></div>
+      <div class="analytics-card"><div class="analytics-label">Average Rating</div><div class="skeleton skeleton-text"></div></div>
+    </div>
+    <p class="empty-note" style="margin-top: 0.9rem;">Log at least 2 entries for the same metric in Your Stats to see a growth trend here.</p>
+  `;
   if (eligible.length > 0) {
     const [topKey, topMeta] = eligible[0];
     const projRes = await fetch(`/api/projections/me?metric_key=${encodeURIComponent(topKey)}`);
@@ -848,35 +951,98 @@ async function renderHomePanel() {
     }
   }
 
-  const reminderHtml = dueEvents
-    .map(
-      (e) => `
-      <div class="reminder-banner">
-        <div class="reminder-text">
-          ${e.event_type === "match" ? "⚽" : "🏋️"} You have a
-          ${e.sport} <strong>${e.event_type === "match" ? "Match" : "Practice"}</strong> today${e.event_time ? ` at ${formatEventTime(e.event_time)}` : ""}${e.opponent ? ` vs ${e.opponent}` : ""} — log your stats.
+  const eventsHtml = dueEvents.length
+    ? `<div class="event-card-grid">${dueEvents
+        .map(
+          (e) => `
+      <div>
+        <div class="event-card">
+          <div class="event-card-icon">${e.event_type === "match" ? "⚽" : "🏋️"}</div>
+          <div class="event-card-body">
+            <div class="event-card-title">${e.sport} ${e.event_type === "match" ? "Match" : "Practice"}</div>
+            <div class="event-card-meta">Today${e.event_time ? ` • ${formatEventTime(e.event_time)}` : ""}${e.opponent ? ` • vs ${e.opponent}` : ""}</div>
+          </div>
+          <button type="button" class="event-card-action" id="reminder-log-btn-${e.id}">Log Stats &rarr;</button>
         </div>
-        <button type="button" class="reminder-log-btn" id="reminder-log-btn-${e.id}">Log Stats</button>
+        <div class="reminder-form hidden" id="reminder-form-${e.id}"></div>
+      </div>`
+        )
+        .join("")}</div>`
+    : `<p class="empty-note">Nothing scheduled for today — enjoy the rest day.</p>`;
+
+  const followedHtml = followed.length
+    ? `<div class="followed-grid">${followed
+        .map(
+          (p) => `
+        <div class="followed-card" data-player-id="${p.player_id}">
+          ${p.thumb ? `<img src="${p.thumb}" alt="${p.name}" />` : ""}
+          <div class="followed-info">
+            <div class="followed-name">${p.name}</div>
+            <div class="result-meta">${p.sport || ""}${p.team ? " · " + p.team : ""}</div>
+          </div>
+          <button type="button" class="followed-unfollow-btn" data-player-id="${p.player_id}" title="Unfollow">&times;</button>
+        </div>`
+        )
+        .join("")}</div>`
+    : `<p class="empty-note">You're not following anyone yet — find a player in Player Stats and hit Follow.</p>`;
+
+  const statsHtml = slices.length
+    ? renderPieChart(slices)
+    : `
+      <div class="empty-state">
+        <svg class="empty-state-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19V5" /><path d="M4 19h16" /><path d="M8 15l3-4 3 2 4-6" />
+        </svg>
+        <div class="empty-state-title">No stats yet</div>
+        <p class="empty-state-subtitle">Log your first session to start tracking your progress.</p>
+        <button type="button" id="home-add-first-stat-btn">Add First Stat</button>
       </div>
-      <div class="reminder-form hidden" id="reminder-form-${e.id}"></div>`
-    )
-    .join("");
+    `;
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   panel.innerHTML = `
     <div class="category home-greeting">
-      <h2>Welcome back, ${currentUsername}!</h2>
-      <p class="subtitle">Here's a snapshot of what you've logged so far.</p>
-      ${reminderHtml}
+      <h2>${greeting}, ${currentUsername} &#128075;</h2>
+      <p class="subtitle">Here's today's activity.</p>
+    </div>
+    <div class="category">
+      <h3>Today's Events</h3>
+      ${eventsHtml}
+    </div>
+    <div class="category">
+      <h3>Players You Follow</h3>
+      ${followedHtml}
     </div>
     <div class="category">
       <h3>Your Stats Breakdown</h3>
-      ${slices.length ? renderPieChart(slices) : `<p class="empty-note">No stats logged yet — head to Your Stats to log your first entry.</p>`}
+      ${statsHtml}
     </div>
     <div class="category">
       <h3>Growth</h3>
       ${growthHtml}
     </div>
   `;
+
+  const addFirstStatBtn = document.getElementById("home-add-first-stat-btn");
+  if (addFirstStatBtn) {
+    addFirstStatBtn.addEventListener("click", () => activateTab("your-stats"));
+  }
+
+  panel.querySelectorAll(".followed-card").forEach((card) => {
+    card.addEventListener("click", (event) => {
+      if (event.target.closest(".followed-unfollow-btn")) return;
+      viewPlayerById(card.dataset.playerId);
+    });
+  });
+  panel.querySelectorAll(".followed-unfollow-btn").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await fetch(`/api/follows/${btn.dataset.playerId}`, { method: "DELETE" });
+      renderHomePanel();
+    });
+  });
 
   dueEvents.forEach((e) => {
     const logBtn = document.getElementById(`reminder-log-btn-${e.id}`);
@@ -1354,7 +1520,7 @@ function sparkline(history) {
 
   return `
     <svg width="${width}" height="${height}" class="sparkline" viewBox="0 0 ${width} ${height}">
-      <polyline points="${points}" fill="none" stroke="#4f8cff" stroke-width="2" />
+      <polyline points="${points}" fill="none" stroke="#2563EB" stroke-width="2" />
     </svg>
   `;
 }

@@ -162,7 +162,10 @@ def sportsdb_get(endpoint, params=None):
 
     response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
     if response.status_code == 429:
-        raise RateLimitError("TheSportsDB rate limit reached, try again shortly.")
+        raise RateLimitError(
+            "The sports data API is shared by everyone using this app right now and just hit "
+            "its per-minute limit — wait a few seconds and try again."
+        )
     response.raise_for_status()
     try:
         data = response.json()
@@ -906,6 +909,38 @@ def coach_chat():
         return jsonify({"error": "Coach didn't return a response — try rephrasing."}), 502
 
     return jsonify({"reply": reply})
+
+
+# ---------- Followed players ----------
+
+@app.route("/api/follows")
+@login_required
+def get_follows():
+    return jsonify({"players": db.get_followed_players(session["user_id"])})
+
+
+@app.route("/api/follows", methods=["POST"])
+@login_required
+def follow_player_route():
+    payload = request.get_json(silent=True) or {}
+    player_id = payload.get("player_id")
+    name = payload.get("name")
+    if not player_id or not name:
+        return jsonify({"error": "player_id and name are required."}), 400
+
+    db.follow_player(
+        session["user_id"], str(player_id), name,
+        payload.get("sport"), payload.get("team"), payload.get("thumb"),
+        datetime.now().isoformat(),
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/follows/<player_id>", methods=["DELETE"])
+@login_required
+def unfollow_player_route(player_id):
+    db.unfollow_player(session["user_id"], player_id)
+    return jsonify({"ok": True})
 
 
 # ---------- TheSportsDB lookups ----------

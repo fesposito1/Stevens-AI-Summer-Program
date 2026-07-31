@@ -7,17 +7,6 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-  <div class="sports-decor" aria-hidden="true">
-    <span class="sports-decor-item deco-1">&#9917;</span>
-    <span class="sports-decor-item deco-2">&#127936;</span>
-    <span class="sports-decor-item deco-3">&#127944;</span>
-    <span class="sports-decor-item deco-4">&#9918;</span>
-    <span class="sports-decor-item deco-5">&#127934;</span>
-    <span class="sports-decor-item deco-6">&#127954;</span>
-    <span class="sports-decor-item deco-7">&#9971;</span>
-    <span class="sports-decor-item deco-8">&#129357;</span>
-  </div>
-
   <div id="auth-screen" class="auth-screen">
     <div class="auth-box">
       <h1>Sports Stats Search</h1>
@@ -56,10 +45,19 @@
 
   <div id="app" class="app hidden">
     <header class="app-header">
-      <h1>Sports Stats Search</h1>
+      <div class="app-brand">
+        <div class="app-logo" aria-hidden="true">&#127942;</div>
+        <h1>Sports Stats</h1>
+      </div>
       <div class="header-right">
-        <span id="current-username"></span>
-        <button type="button" id="logout-btn">Log Out</button>
+        <button type="button" class="icon-btn" id="notification-btn" title="Notifications" aria-label="Notifications">&#128276;</button>
+        <div class="avatar-menu">
+          <button type="button" class="avatar-btn" id="avatar-btn" aria-haspopup="true" aria-expanded="false"></button>
+          <div class="avatar-dropdown hidden" id="avatar-dropdown">
+            <div class="avatar-dropdown-username" id="current-username"></div>
+            <button type="button" class="avatar-dropdown-item danger" id="logout-btn">Log Out</button>
+          </div>
+        </div>
       </div>
     </header>
 
