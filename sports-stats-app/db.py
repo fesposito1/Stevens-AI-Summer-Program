@@ -92,6 +92,10 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ip TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_device_id TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_premium INTEGER DEFAULT 0")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_since TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_messages_date TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_messages_count INTEGER DEFAULT 0")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS app_settings (
                     key TEXT PRIMARY KEY,
@@ -216,6 +220,10 @@ def init_db():
                 "ALTER TABLE users ADD COLUMN last_login TEXT",
                 "ALTER TABLE users ADD COLUMN last_ip TEXT",
                 "ALTER TABLE users ADD COLUMN last_device_id TEXT",
+                "ALTER TABLE users ADD COLUMN is_premium INTEGER DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN premium_since TEXT",
+                "ALTER TABLE users ADD COLUMN coach_messages_date TEXT",
+                "ALTER TABLE users ADD COLUMN coach_messages_count INTEGER DEFAULT 0",
                 "ALTER TABLE events ADD COLUMN event_time TEXT",
                 "ALTER TABLE events ADD COLUMN sport TEXT NOT NULL DEFAULT 'Soccer'",
             ):
@@ -253,7 +261,7 @@ def get_user_by_id(user_id):
 def get_all_users():
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id, username, created_at, is_admin, last_login, last_ip, last_device_id "
+            "SELECT id, username, created_at, is_admin, last_login, last_ip, last_device_id, is_premium "
             "FROM users ORDER BY username"
         ).fetchall()
         return [dict(r) for r in rows]
@@ -289,7 +297,32 @@ def delete_user(user_id):
     with get_conn() as conn:
         conn.execute("DELETE FROM stat_logs WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM events WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM followed_players WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+def set_premium(user_id, is_premium, since=None):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET is_premium = ?, premium_since = ? WHERE id = ?",
+            (1 if is_premium else 0, since, user_id),
+        )
+
+
+def get_coach_usage(user_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT coach_messages_date, coach_messages_count FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        return (row["coach_messages_date"], row["coach_messages_count"] or 0) if row else (None, 0)
+
+
+def set_coach_usage(user_id, date, count):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET coach_messages_date = ?, coach_messages_count = ? WHERE id = ?",
+            (date, count, user_id),
+        )
 
 
 def ban_ip(ip_address, banned_at):

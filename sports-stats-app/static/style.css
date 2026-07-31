@@ -553,6 +553,12 @@ th {
   background: var(--panel);
 }
 
+.auth-form-links {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -0.35rem;
+}
+
 .auth-link {
   color: var(--accent);
   font-size: 0.85rem;
@@ -1270,4 +1276,224 @@ th {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* ---------- Footer ---------- */
+
+.app-footer {
+  max-width: 900px;
+  margin: 2rem auto 0;
+  padding: 1.5rem 1.5rem 6.5rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+.app-footer p {
+  margin: 0.25rem 0;
+}
+
+.app-footer-sub {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.auth-screen .app-footer {
+  border-top: none;
+  padding: 1.5rem 1.5rem 0;
+  margin-top: 1.5rem;
+}
+
+/* ---------- Premium tab ---------- */
+
+.tab-btn-premium .tab-icon {
+  filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.5));
+}
+
+.premium-pricing {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.pricing-card {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.pricing-card h3 {
+  margin: 0 0 0.6rem;
+}
+
+.pricing-price {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 1rem;
+}
+
+.pricing-price span {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.pricing-features {
+  list-style: none;
+  margin: 0 0 1.2rem;
+  padding: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  font-size: 0.88rem;
+}
+
+.pricing-features li {
+  padding-left: 1.4rem;
+  position: relative;
+}
+
+.pricing-features li::before {
+  content: "\2713";
+  position: absolute;
+  left: 0;
+  color: var(--success);
+  font-weight: 700;
+}
+
+.pricing-card-premium {
+  position: relative;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.06), var(--panel) 40%);
+}
+
+.pricing-ribbon {
+  position: absolute;
+  top: -0.6rem;
+  right: 1rem;
+  background: #F59E0B;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+}
+
+.premium-status-card {
+  text-align: center;
+}
+
+.premium-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: white;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  margin-bottom: 0.8rem;
+}
+
+/* ---------- Fake checkout modal ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  animation: fadeIn 0.2s var(--ease) both;
+}
+
+.modal-card {
+  background: var(--panel);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-lg);
+  padding: 1.6rem;
+  width: 100%;
+  max-width: 380px;
+  animation: fadeSlideUp 0.25s var(--ease) both;
+}
+
+.modal-card h3 {
+  margin: 0 0 0.4rem;
+}
+
+#checkout-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+#checkout-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+#checkout-form input {
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+#checkout-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.checkout-row {
+  display: flex;
+  gap: 0.8rem;
+}
+
+.checkout-row label {
+  flex: 1;
+}
+
+.checkout-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.checkout-actions button {
+  flex: 1;
+}
+
+.checkout-cancel-btn {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.checkout-cancel-btn:hover {
+  background: var(--border);
+}
+
+/* ---------- Locked (premium-gated) projection rows ---------- */
+
+.locked-row td {
+  color: var(--muted);
+}
+
+.locked-value {
+  filter: blur(3px);
+  user-select: none;
+  opacity: 0.6;
 }

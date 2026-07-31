@@ -17,8 +17,10 @@
       <form id="login-form" class="auth-form">
         <input type="text" id="login-username" placeholder="Username" autocomplete="username" required />
         <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
+        <div class="auth-form-links">
+          <a href="#" id="forgot-link" class="auth-link">Forgot password?</a>
+        </div>
         <button type="submit">Log In</button>
-        <a href="#" id="forgot-link" class="auth-link">Forgot password?</a>
       </form>
       <form id="signup-form" class="auth-form hidden">
         <input type="text" id="signup-username" placeholder="Username (min 3 chars)" autocomplete="username" required />
@@ -41,6 +43,10 @@
       </form>
       <div id="auth-message" class="message hidden"></div>
     </div>
+    <footer class="app-footer">
+      <p>&copy; <span class="footer-year"></span> Sports Stats Search. All rights reserved.</p>
+      <p class="app-footer-sub">Built for the Stevens AI Summer Program &middot; Player &amp; team data via TheSportsDB</p>
+    </footer>
   </div>
 
   <div id="app" class="app hidden">
@@ -70,9 +76,15 @@
       <section id="tab-leaderboard" class="tab-panel"></section>
       <section id="tab-projections" class="tab-panel"></section>
       <section id="tab-coach" class="tab-panel"></section>
+      <section id="tab-premium" class="tab-panel"></section>
       <section id="tab-account" class="tab-panel"></section>
       <section id="tab-admin" class="tab-panel"></section>
     </main>
+
+    <footer class="app-footer">
+      <p>&copy; <span class="footer-year"></span> Sports Stats Search. All rights reserved.</p>
+      <p class="app-footer-sub">Built for the Stevens AI Summer Program &middot; Player &amp; team data via TheSportsDB</p>
+    </footer>
 
     <nav class="tab-nav">
       <button type="button" class="tab-btn active" data-tab="home">
@@ -98,6 +110,9 @@
       </button>
       <button type="button" class="tab-btn" data-tab="coach">
         <span class="tab-icon">&#129302;</span><span class="tab-label">Coach</span>
+      </button>
+      <button type="button" class="tab-btn tab-btn-premium" data-tab="premium">
+        <span class="tab-icon">&#11088;</span><span class="tab-label">Premium</span>
       </button>
       <button type="button" class="tab-btn" data-tab="account">
         <span class="tab-icon">&#9881;&#65039;</span><span class="tab-label">Account</span>

@@ -62,8 +62,13 @@ CACHE_TTL_SECONDS = 300
 # AI Coach — Google Gemini, free tier, no shared key needed (each user brings their own)
 GEMINI_MODEL = "gemini-flash-latest"
 COACH_COOLDOWN_SECONDS = 2.0
+FREE_COACH_DAILY_LIMIT = 5
 _coach_last_call = {}
 _coach_lock = Lock()
+
+# Premium (demo only — no real payment processor is involved anywhere in this app)
+PREMIUM_PRICE_DISPLAY = "$4.99/mo"
+FREE_PROJECTION_HORIZON_DAYS = 30
 DEFAULT_COACH_SYSTEM_PROMPT = (
     "You are an encouraging, knowledgeable sports performance coach embedded in a "
     "stats-tracking app. Give specific, actionable advice based on the athlete's own "
@@ -395,7 +400,8 @@ def signup():
     session["user_id"] = user_id
     session["username"] = username
     session["is_admin"] = False
-    return jsonify({"username": username, "is_admin": False})
+    session["is_premium"] = False
+    return jsonify({"username": username, "is_admin": False, "is_premium": False})
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -414,7 +420,12 @@ def login():
     session["user_id"] = user["id"]
     session["username"] = user["username"]
     session["is_admin"] = bool(user.get("is_admin"))
-    return jsonify({"username": user["username"], "is_admin": bool(user.get("is_admin"))})
+    session["is_premium"] = bool(user.get("is_premium"))
+    return jsonify({
+        "username": user["username"],
+        "is_admin": bool(user.get("is_admin")),
+        "is_premium": bool(user.get("is_premium")),
+    })
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -427,7 +438,11 @@ def logout():
 def auth_me():
     if "user_id" not in session:
         return jsonify({"username": None})
-    return jsonify({"username": session.get("username"), "is_admin": bool(session.get("is_admin"))})
+    return jsonify({
+        "username": session.get("username"),
+        "is_admin": bool(session.get("is_admin")),
+        "is_premium": bool(session.get("is_premium")),
+    })
 
 
 # ---------- Forgot password ----------
@@ -520,6 +535,24 @@ def account_delete():
     return jsonify({"ok": True})
 
 
+@app.route("/api/account/upgrade-premium", methods=["POST"])
+@login_required
+def account_upgrade_premium():
+    """Demo-only 'checkout' — no real payment is processed or ever received by this
+    route; the frontend's card fields are decorative and never sent here."""
+    db.set_premium(session["user_id"], True, datetime.now().isoformat())
+    session["is_premium"] = True
+    return jsonify({"ok": True, "is_premium": True})
+
+
+@app.route("/api/account/cancel-premium", methods=["POST"])
+@login_required
+def account_cancel_premium():
+    db.set_premium(session["user_id"], False)
+    session["is_premium"] = False
+    return jsonify({"ok": True, "is_premium": False})
+
+
 # ---------- Admin ----------
 
 @app.route("/api/admin/users")
@@ -567,6 +600,17 @@ def admin_delete_user(user_id):
     if target["username"] == ADMIN_USERNAME:
         return jsonify({"error": "Can't delete the seeded admin account."}), 400
     db.delete_user(user_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<int:user_id>/set-premium", methods=["POST"])
+@admin_required
+def admin_set_premium(user_id):
+    payload = request.get_json(silent=True) or {}
+    is_premium = bool(payload.get("is_premium"))
+    if not db.get_user_by_id(user_id):
+        return jsonify({"error": "User not found."}), 404
+    db.set_premium(user_id, is_premium, datetime.now().isoformat() if is_premium else None)
     return jsonify({"ok": True})
 
 
@@ -827,10 +871,15 @@ def projections_me():
     # the effective rate tapers off as the horizon grows, approaching an asymptote of
     # last_value + adjusted_slope * TAU rather than climbing forever.
     TAU = 60.0
+    is_premium = bool(session.get("is_premium"))
     projections = []
     for horizon in (30, 90, 365):
         change = adjusted_slope * TAU * horizon / (TAU + horizon)
-        projections.append({"days_from_now": horizon, "value": round(last_value + change, 2)})
+        projections.append({
+            "days_from_now": horizon,
+            "value": round(last_value + change, 2),
+            "locked": horizon > FREE_PROJECTION_HORIZON_DAYS and not is_premium,
+        })
 
     return jsonify({
         "metric": {
@@ -844,6 +893,7 @@ def projections_me():
         "adjusted_trend_per_day": round(adjusted_slope, 5),
         "age_used": age,
         "age_factor": age_factor,
+        "is_premium": is_premium,
         "model_note": (
             "Rest-day-weighted trend, adjusted for age, projected with a diminishing-returns "
             "curve that levels off over time rather than extending in a straight line. "
@@ -884,6 +934,21 @@ def coach_chat():
         if now - _coach_last_call.get(user_id, 0) < COACH_COOLDOWN_SECONDS:
             return jsonify({"error": "Slow down a bit before sending another message."}), 429
         _coach_last_call[user_id] = now
+
+    if not session.get("is_premium"):
+        today = datetime.now().date().isoformat()
+        usage_date, usage_count = db.get_coach_usage(user_id)
+        if usage_date != today:
+            usage_count = 0
+        if usage_count >= FREE_COACH_DAILY_LIMIT:
+            return jsonify({
+                "error": (
+                    f"You've used today's {FREE_COACH_DAILY_LIMIT} free Coach messages. "
+                    "Upgrade to Premium for unlimited access."
+                ),
+                "premium_required": True,
+            }), 402
+        db.set_coach_usage(user_id, today, usage_count + 1)
 
     context_summary = build_coach_context(db.get_stats_for_user(user_id))
     gemini_history = [

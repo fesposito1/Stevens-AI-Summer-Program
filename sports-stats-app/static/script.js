@@ -2,15 +2,19 @@ let metricsCatalog = {};
 let gameMetricKeysBySport = {};
 let currentUsername = null;
 let currentIsAdmin = false;
+let currentIsPremium = false;
 
 const ALL_TAB_IDS = [
   "tab-home", "tab-your-stats", "tab-calendar", "tab-player-stats", "tab-compare",
-  "tab-leaderboard", "tab-projections", "tab-coach", "tab-account", "tab-admin",
+  "tab-leaderboard", "tab-projections", "tab-coach", "tab-premium", "tab-account", "tab-admin",
 ];
 
 window.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+  document.querySelectorAll(".footer-year").forEach((el) => {
+    el.textContent = new Date().getFullYear();
+  });
   await loadMetricsCatalog();
   setupAuthUI();
   setupTabUI();
@@ -54,7 +58,7 @@ async function checkAuth() {
   const res = await fetch("/api/auth/me");
   const data = await res.json();
   if (data.username) {
-    showApp(data.username, data.is_admin);
+    showApp(data.username, data.is_admin, data.is_premium);
   } else {
     showAuthScreen();
   }
@@ -107,7 +111,7 @@ function setupAuthUI() {
       showAuthMessage(data.error || "Login failed.");
       return;
     }
-    showApp(data.username, data.is_admin);
+    showApp(data.username, data.is_admin, data.is_premium);
   });
 
   document.getElementById("signup-form").addEventListener("submit", async (event) => {
@@ -125,7 +129,7 @@ function setupAuthUI() {
       showAuthMessage(data.error || "Sign up failed.");
       return;
     }
-    showApp(data.username, data.is_admin);
+    showApp(data.username, data.is_admin, data.is_premium);
   });
 
   document.getElementById("forgot-username-form").addEventListener("submit", async (event) => {
@@ -170,6 +174,7 @@ function setupAuthUI() {
     await fetch("/api/auth/logout", { method: "POST" });
     currentUsername = null;
     currentIsAdmin = false;
+    currentIsPremium = false;
     ALL_TAB_IDS.forEach((id) => {
       const el = document.getElementById(id);
       el.innerHTML = "";
@@ -185,9 +190,10 @@ function showAuthMessage(text) {
   el.classList.toggle("hidden", !text);
 }
 
-function showApp(username, isAdmin) {
+function showApp(username, isAdmin, isPremium) {
   currentUsername = username;
   currentIsAdmin = !!isAdmin;
+  currentIsPremium = !!isPremium;
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("current-username").textContent = username;
@@ -222,6 +228,7 @@ function activateTab(tab) {
   if (tab === "leaderboard") renderLeaderboardPanel();
   if (tab === "projections") renderProjectionsPanel();
   if (tab === "coach") renderCoachPanel();
+  if (tab === "premium") renderPremiumPanel();
   if (tab === "account") renderAccountPanel();
   if (tab === "admin") renderAdminPanel();
 }
@@ -1486,14 +1493,29 @@ async function renderProjectionsPanel() {
         <thead><tr><th>In</th><th>Projected ${metric.label}</th></tr></thead>
         <tbody>
           ${projections
-            .map(
-              (p) => `<tr><td>${p.days_from_now} days</td><td>${p.value}${metric.unit ? " " + metric.unit : ""}</td></tr>`
+            .map((p) =>
+              p.locked
+                ? `<tr class="locked-row"><td>${p.days_from_now} days</td><td><span class="locked-value">&#128274; Premium</span></td></tr>`
+                : `<tr><td>${p.days_from_now} days</td><td>${p.value}${metric.unit ? " " + metric.unit : ""}</td></tr>`
             )
             .join("")}
         </tbody>
       </table>
+      ${
+        projections.some((p) => p.locked)
+          ? `<p class="empty-note">90 &amp; 365-day projections are a <a href="#" id="proj-upgrade-link" class="auth-link">Premium</a> feature.</p>`
+          : ""
+      }
       <p class="empty-note">${model_note}</p>
     `;
+
+    const upgradeLink = document.getElementById("proj-upgrade-link");
+    if (upgradeLink) {
+      upgradeLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        activateTab("premium");
+      });
+    }
   }
 
   select.addEventListener("change", loadProjection);
@@ -1582,6 +1604,15 @@ function renderCoachPanel() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (data.premium_required) {
+          messageEl.innerHTML = `${data.error} <a href="#" id="coach-upgrade-link" class="auth-link">Upgrade now</a>`;
+          messageEl.classList.remove("hidden");
+          document.getElementById("coach-upgrade-link").addEventListener("click", (e) => {
+            e.preventDefault();
+            activateTab("premium");
+          });
+          return;
+        }
         showCoachMessage(data.error || "Coach request failed.");
         return;
       }
@@ -1593,6 +1624,144 @@ function renderCoachPanel() {
     } catch (err) {
       showCoachMessage("Something went wrong reaching the coach.");
     }
+  });
+}
+
+// ---------- Premium ----------
+
+function renderPremiumPanel() {
+  const panel = document.getElementById("tab-premium");
+
+  if (currentIsPremium) {
+    panel.innerHTML = `
+      <div class="category premium-status-card premium-active">
+        <div class="premium-badge">&#11088; Premium</div>
+        <h3>You're a Premium member</h3>
+        <p class="empty-note">Unlimited AI Coach messages and full 30/90/365-day Projections are unlocked.</p>
+        <button type="button" id="cancel-premium-btn" class="danger-btn">Cancel Premium</button>
+      </div>
+      <div id="premium-message" class="message hidden"></div>
+    `;
+    document.getElementById("cancel-premium-btn").addEventListener("click", async () => {
+      if (!confirm("Cancel your Premium subscription? You'll lose unlimited Coach messages and full Projections.")) return;
+      const res = await fetch("/api/account/cancel-premium", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        currentIsPremium = false;
+        renderPremiumPanel();
+      }
+    });
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="premium-pricing">
+      <div class="category pricing-card">
+        <h3>Free</h3>
+        <div class="pricing-price">$0<span>/mo</span></div>
+        <ul class="pricing-features">
+          <li>Full team &amp; player search</li>
+          <li>Your Stats, Calendar, Compare, Leaderboard</li>
+          <li>Projections — 30-day estimate</li>
+          <li>AI Coach — 5 messages/day</li>
+        </ul>
+      </div>
+      <div class="category pricing-card pricing-card-premium">
+        <div class="pricing-ribbon">Most Popular</div>
+        <h3>&#11088; Premium</h3>
+        <div class="pricing-price">$4.99<span>/mo</span></div>
+        <ul class="pricing-features">
+          <li>Everything in Free</li>
+          <li>Projections — full 30/90/365-day estimates</li>
+          <li>AI Coach — unlimited messages</li>
+          <li>Premium badge on Leaderboard</li>
+        </ul>
+        <button type="button" id="open-checkout-btn">Upgrade to Premium</button>
+      </div>
+    </div>
+    <div id="premium-message" class="message hidden"></div>
+
+    <div id="checkout-modal-backdrop" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <h3>Upgrade to Premium</h3>
+        <p class="empty-note">This is a demo checkout — no real payment is processed or stored anywhere.</p>
+        <form id="checkout-form">
+          <label>Cardholder Name
+            <input type="text" id="checkout-name" placeholder="Jane Doe" required />
+          </label>
+          <label>Card Number
+            <input type="text" id="checkout-card" placeholder="4242 4242 4242 4242" maxlength="19" required />
+          </label>
+          <div class="checkout-row">
+            <label>Expiry
+              <input type="text" id="checkout-expiry" placeholder="MM/YY" maxlength="5" required />
+            </label>
+            <label>CVC
+              <input type="text" id="checkout-cvc" placeholder="123" maxlength="4" required />
+            </label>
+          </div>
+          <div class="checkout-actions">
+            <button type="button" id="checkout-cancel-btn" class="checkout-cancel-btn">Cancel</button>
+            <button type="submit" id="checkout-submit-btn">Subscribe Now — $4.99/mo</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+
+  function showPremiumMessage(text) {
+    const el = document.getElementById("premium-message");
+    el.textContent = text;
+    el.classList.toggle("hidden", !text);
+  }
+
+  const backdrop = document.getElementById("checkout-modal-backdrop");
+
+  document.getElementById("open-checkout-btn").addEventListener("click", () => {
+    backdrop.classList.remove("hidden");
+  });
+  document.getElementById("checkout-cancel-btn").addEventListener("click", () => {
+    backdrop.classList.add("hidden");
+  });
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) backdrop.classList.add("hidden");
+  });
+
+  const cardInput = document.getElementById("checkout-card");
+  cardInput.addEventListener("input", () => {
+    const digits = cardInput.value.replace(/\D/g, "").slice(0, 16);
+    cardInput.value = digits.replace(/(.{4})/g, "$1 ").trim();
+  });
+  const expiryInput = document.getElementById("checkout-expiry");
+  expiryInput.addEventListener("input", () => {
+    const digits = expiryInput.value.replace(/\D/g, "").slice(0, 4);
+    expiryInput.value = digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
+  });
+
+  document.getElementById("checkout-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submitBtn = document.getElementById("checkout-submit-btn");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Processing payment...";
+
+    // Card fields above are decorative only — nothing entered in this form is ever sent
+    // anywhere. This is a demo checkout with no real payment processor involved.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+
+    const res = await fetch("/api/account/upgrade-premium", { method: "POST" });
+    const data = await res.json();
+
+    if (!res.ok) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Subscribe Now — $4.99/mo";
+      showPremiumMessage(data.error || "Something went wrong.");
+      return;
+    }
+
+    currentIsPremium = true;
+    backdrop.classList.add("hidden");
+    renderPremiumPanel();
+    showPremiumMessage("🎉 Welcome to Premium!");
   });
 }
 
@@ -1932,6 +2101,7 @@ function renderAccountPanel() {
     }
     currentUsername = null;
     currentIsAdmin = false;
+    currentIsPremium = false;
     ALL_TAB_IDS.forEach((id) => {
       const el = document.getElementById(id);
       el.innerHTML = "";
