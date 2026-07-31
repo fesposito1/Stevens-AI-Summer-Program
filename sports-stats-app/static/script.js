@@ -510,11 +510,6 @@ function mapApiSportToMetricsSport(apiSport) {
 
 async function renderCompareDetail(container, item, data, onBack) {
   const info = data.info;
-  const mappedSport = mapApiSportToMetricsSport(info.sport);
-  const skillKeys = mappedSport ? gameMetricKeysBySport[mappedSport] || [] : [];
-  const skillMetrics = mappedSport
-    ? (metricsCatalog[mappedSport] || []).filter((m) => skillKeys.includes(m.key))
-    : [];
 
   const statsRes = await fetch("/api/stats/me");
   const statsData = await statsRes.json();
@@ -523,14 +518,6 @@ async function renderCompareDetail(container, item, data, onBack) {
     const key = `${s.sport}|${s.metric_key}`;
     if (!(key in latest)) latest[key] = s.value;
   });
-
-  const hasSkills = mappedSport && skillMetrics.length > 0;
-  const skillInputsHtml = skillMetrics
-    .map((m) => {
-      const prefill = latest[`${mappedSport}|${m.key}`];
-      return `<label>${m.label}${m.unit ? ` (${m.unit})` : ""}<input type="number" step="any" id="cmp-${m.key}" value="${prefill ?? ""}" placeholder="e.g. 0" /></label>`;
-    })
-    .join("");
 
   const bio = {
     height_in: latest["Bio|height_in"],
@@ -549,110 +536,55 @@ async function renderCompareDetail(container, item, data, onBack) {
       </div>
     </div>
 
-    ${hasBio ? `
     <div class="category">
       <h3>Compare Your Bio</h3>
-      <p class="empty-note">Real data from TheSportsDB — ${info.name}'s actual height/weight/age.</p>
-      <div class="compare-form">
-        <label>Height (in)<input type="number" step="any" id="cmp-bio-height" value="${bio.height_in ?? ""}" placeholder="e.g. 70" /></label>
-        <label>Weight (lbs)<input type="number" step="any" id="cmp-bio-weight" value="${bio.weight_lbs ?? ""}" placeholder="e.g. 170" /></label>
-        <label>Age (yrs)<input type="number" step="any" id="cmp-bio-age" value="${bio.age ?? ""}" placeholder="e.g. 25" /></label>
-      </div>
-      <div class="compare-form">
-        <button type="button" id="cmp-bio-btn">Compare</button>
-        <button type="button" id="cmp-bio-save-btn">Save as My Bio</button>
-      </div>
-      <div id="cmp-bio-save-msg" class="empty-note hidden"></div>
-      <div id="cmp-bio-result"></div>
-    </div>
-    ` : ""}
-
-    <div class="category">
-      <h3>${hasSkills ? `Compare Your ${mappedSport} Skills` : "Compare"}</h3>
       ${
-        hasSkills
+        hasBio
           ? `
-        <div class="compare-form">${skillInputsHtml}</div>
+        <p class="empty-note">Real data from TheSportsDB — ${info.name}'s actual height/weight/age.</p>
         <div class="compare-form">
-          <button type="button" id="cmp-btn">Compare</button>
-          <button type="button" id="cmp-save-btn">Save to My Stats</button>
+          <label>Height (in)<input type="number" step="any" id="cmp-bio-height" value="${bio.height_in ?? ""}" placeholder="e.g. 70" /></label>
+          <label>Weight (lbs)<input type="number" step="any" id="cmp-bio-weight" value="${bio.weight_lbs ?? ""}" placeholder="e.g. 170" /></label>
+          <label>Age (yrs)<input type="number" step="any" id="cmp-bio-age" value="${bio.age ?? ""}" placeholder="e.g. 25" /></label>
         </div>
-        <p class="empty-note">
-          Your values are prefilled from your latest logged stats. TheSportsDB's free tier doesn't
-          include ${info.name}'s personal game stats, so their side will note that instead of a
-          made-up number.
-        </p>
-        <div id="cmp-save-msg" class="empty-note hidden"></div>
-        <div id="cmp-result"></div>
+        <div class="compare-form">
+          <button type="button" id="cmp-bio-btn">Compare</button>
+          <button type="button" id="cmp-bio-save-btn">Save as My Bio</button>
+        </div>
+        <div id="cmp-bio-save-msg" class="empty-note hidden"></div>
+        <div id="cmp-bio-result"></div>
       `
-          : `<p class="empty-note">No skill stats are configured for ${info.sport || "this sport"} yet.</p>`
+          : `<p class="empty-note">TheSportsDB doesn't have bio data (height/weight/age) for ${info.name}.</p>`
       }
     </div>
   `;
   container.classList.remove("hidden");
   document.getElementById("back-link").addEventListener("click", onBack);
 
-  if (hasBio) {
-    const runBioCompare = () => {
-      const you = {
-        height: parseFloat(document.getElementById("cmp-bio-height").value),
-        weight: parseFloat(document.getElementById("cmp-bio-weight").value),
-        age: parseFloat(document.getElementById("cmp-bio-age").value),
-      };
-      const rows = [
-        compareRow("Height", you.height, info.height_in, " in", info.name),
-        compareRow("Weight", you.weight, info.weight_lbs, " lbs", info.name),
-        compareRow("Age", you.age, info.age, " yrs", info.name),
-      ].join("");
-      document.getElementById("cmp-bio-result").innerHTML = rows;
+  if (!hasBio) return;
+
+  const runBioCompare = () => {
+    const you = {
+      height: parseFloat(document.getElementById("cmp-bio-height").value),
+      weight: parseFloat(document.getElementById("cmp-bio-weight").value),
+      age: parseFloat(document.getElementById("cmp-bio-age").value),
     };
+    const rows = [
+      compareRow("Height", you.height, info.height_in, " in", info.name),
+      compareRow("Weight", you.weight, info.weight_lbs, " lbs", info.name),
+      compareRow("Age", you.age, info.age, " yrs", info.name),
+    ].join("");
+    document.getElementById("cmp-bio-result").innerHTML = rows;
+  };
 
-    document.getElementById("cmp-bio-btn").addEventListener("click", runBioCompare);
+  document.getElementById("cmp-bio-btn").addEventListener("click", runBioCompare);
 
-    document.getElementById("cmp-bio-save-btn").addEventListener("click", async () => {
-      const entries = [
-        { sport: "Bio", metric_key: "height_in", value: document.getElementById("cmp-bio-height").value },
-        { sport: "Bio", metric_key: "weight_lbs", value: document.getElementById("cmp-bio-weight").value },
-        { sport: "Bio", metric_key: "age", value: document.getElementById("cmp-bio-age").value },
-      ].filter((e) => e.value !== "");
-
-      for (const entry of entries) {
-        await fetch("/api/stats", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(entry),
-        });
-      }
-
-      const msg = document.getElementById("cmp-bio-save-msg");
-      msg.textContent = "Saved to Your Stats!";
-      msg.classList.remove("hidden");
-      setTimeout(() => msg.classList.add("hidden"), 2500);
-    });
-
-    if (bio.height_in !== undefined || bio.weight_lbs !== undefined || bio.age !== undefined) {
-      runBioCompare();
-    }
-  }
-
-  if (!hasSkills) return;
-
-  function runCompare() {
-    const rows = skillMetrics
-      .map((m) => {
-        const youVal = parseFloat(document.getElementById(`cmp-${m.key}`).value);
-        return compareRow(m.label, youVal, null, m.unit ? ` ${m.unit}` : "", info.name);
-      })
-      .join("");
-    document.getElementById("cmp-result").innerHTML = rows;
-  }
-
-  document.getElementById("cmp-btn").addEventListener("click", runCompare);
-
-  document.getElementById("cmp-save-btn").addEventListener("click", async () => {
-    const entries = skillMetrics
-      .map((m) => ({ sport: mappedSport, metric_key: m.key, value: document.getElementById(`cmp-${m.key}`).value }))
-      .filter((e) => e.value !== "");
+  document.getElementById("cmp-bio-save-btn").addEventListener("click", async () => {
+    const entries = [
+      { sport: "Bio", metric_key: "height_in", value: document.getElementById("cmp-bio-height").value },
+      { sport: "Bio", metric_key: "weight_lbs", value: document.getElementById("cmp-bio-weight").value },
+      { sport: "Bio", metric_key: "age", value: document.getElementById("cmp-bio-age").value },
+    ].filter((e) => e.value !== "");
 
     for (const entry of entries) {
       await fetch("/api/stats", {
@@ -662,14 +594,14 @@ async function renderCompareDetail(container, item, data, onBack) {
       });
     }
 
-    const msg = document.getElementById("cmp-save-msg");
+    const msg = document.getElementById("cmp-bio-save-msg");
     msg.textContent = "Saved to Your Stats!";
     msg.classList.remove("hidden");
     setTimeout(() => msg.classList.add("hidden"), 2500);
   });
 
-  if (skillMetrics.some((m) => latest[`${mappedSport}|${m.key}`] !== undefined)) {
-    runCompare();
+  if (bio.height_in !== undefined || bio.weight_lbs !== undefined || bio.age !== undefined) {
+    runBioCompare();
   }
 }
 
