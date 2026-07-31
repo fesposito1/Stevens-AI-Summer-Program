@@ -16,6 +16,10 @@ try:
     import google.generativeai as genai
 except ImportError:
     genai = None
+try:
+    import stripe
+except ImportError:
+    stripe = None
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
@@ -69,6 +73,7 @@ _coach_lock = Lock()
 # Premium (demo only — no real payment processor is involved anywhere in this app)
 PREMIUM_PRICE_DISPLAY = "$4.99/mo"
 FREE_PROJECTION_HORIZON_DAYS = 30
+STRIPE_PRICE_CENTS = 499
 DEFAULT_COACH_SYSTEM_PROMPT = (
     "You are an encouraging, knowledgeable sports performance coach embedded in a "
     "stats-tracking app. Give specific, actionable advice based on the athlete's own "
@@ -318,20 +323,36 @@ def get_latest_bio_age(user_id):
     return rows[-1]["value"]
 
 
+def local_secret_path(filename):
+    return os.path.join(db.data_dir(), filename)
+
+
+def get_local_secret(env_var, filename):
+    value = os.environ.get(env_var)
+    if value and value.strip():
+        return value.strip()
+    path = local_secret_path(filename)
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            value = f.read().strip()
+        return value or None
+    return None
+
+
 def gemini_key_path():
-    return os.path.join(db.data_dir(), "gemini_api_key.txt")
+    return local_secret_path("gemini_api_key.txt")
 
 
 def get_gemini_api_key():
-    key = os.environ.get("GEMINI_API_KEY")
-    if key and key.strip():
-        return key.strip()
-    path = gemini_key_path()
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            key = f.read().strip()
-        return key or None
-    return None
+    return get_local_secret("GEMINI_API_KEY", "gemini_api_key.txt")
+
+
+def get_stripe_secret_key():
+    return get_local_secret("STRIPE_SECRET_KEY", "stripe_secret_key.txt")
+
+
+def get_stripe_webhook_secret():
+    return get_local_secret("STRIPE_WEBHOOK_SECRET", "stripe_webhook_secret.txt")
 
 
 def build_coach_context(stats):
@@ -538,8 +559,8 @@ def account_delete():
 @app.route("/api/account/upgrade-premium", methods=["POST"])
 @login_required
 def account_upgrade_premium():
-    """Demo-only 'checkout' — no real payment is processed or ever received by this
-    route; the frontend's card fields are decorative and never sent here."""
+    """Manual override (used by the admin 'set premium' toggle) - bypasses Stripe
+    entirely. The real user-facing path is /api/premium/checkout below."""
     db.set_premium(session["user_id"], True, datetime.now().isoformat())
     session["is_premium"] = True
     return jsonify({"ok": True, "is_premium": True})
@@ -548,9 +569,95 @@ def account_upgrade_premium():
 @app.route("/api/account/cancel-premium", methods=["POST"])
 @login_required
 def account_cancel_premium():
+    user = db.get_user_by_id(session["user_id"])
+    secret_key = get_stripe_secret_key()
+    if stripe and secret_key and user and user.get("stripe_subscription_id"):
+        try:
+            stripe.api_key = secret_key
+            stripe.Subscription.delete(user["stripe_subscription_id"])
+        except Exception:
+            pass  # already canceled on Stripe's side, or Stripe is unreachable - still reflect locally
     db.set_premium(session["user_id"], False)
     session["is_premium"] = False
     return jsonify({"ok": True, "is_premium": False})
+
+
+# ---------- Premium checkout (Stripe, test mode) ----------
+
+@app.route("/api/premium/checkout", methods=["POST"])
+@login_required
+def premium_create_checkout():
+    if not stripe:
+        return jsonify({"error": "Stripe isn't available on this deployment (stripe package isn't installed)."}), 503
+    secret_key = get_stripe_secret_key()
+    if not secret_key:
+        return jsonify({
+            "error": "Stripe isn't configured yet. Set STRIPE_SECRET_KEY (a test-mode key) to enable checkout."
+        }), 503
+
+    stripe.api_key = secret_key
+    base_url = request.host_url.rstrip("/")
+
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            mode="subscription",
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {"name": "Sports Stats Search Premium"},
+                    "unit_amount": STRIPE_PRICE_CENTS,
+                    "recurring": {"interval": "month"},
+                },
+                "quantity": 1,
+            }],
+            client_reference_id=str(session["user_id"]),
+            success_url=f"{base_url}/?checkout=success",
+            cancel_url=f"{base_url}/?checkout=cancel",
+        )
+    except Exception as exc:
+        return jsonify({"error": f"Couldn't start checkout: {exc}"}), 502
+
+    return jsonify({"checkout_url": checkout_session.url})
+
+
+@app.route("/api/premium/webhook", methods=["POST"])
+def premium_webhook():
+    if not stripe:
+        return jsonify({"error": "Stripe isn't available."}), 503
+    webhook_secret = get_stripe_webhook_secret()
+    secret_key = get_stripe_secret_key()
+    if not webhook_secret or not secret_key:
+        return jsonify({"error": "Stripe webhook isn't configured."}), 503
+
+    stripe.api_key = secret_key
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+    except (ValueError, stripe.error.SignatureVerificationError):
+        return jsonify({"error": "Invalid signature"}), 400
+
+    event_type = event["type"]
+    obj = event["data"]["object"]
+
+    if event_type == "checkout.session.completed":
+        user_id = obj.get("client_reference_id")
+        if user_id:
+            db.set_premium(int(user_id), True, datetime.now().isoformat())
+            db.set_stripe_ids(int(user_id), obj.get("customer"), obj.get("subscription"))
+    elif event_type == "customer.subscription.deleted":
+        user = db.get_user_by_stripe_subscription(obj.get("id"))
+        if user:
+            db.set_premium(user["id"], False)
+    elif event_type == "customer.subscription.updated":
+        if obj.get("status") in ("canceled", "unpaid", "incomplete_expired"):
+            user = db.get_user_by_stripe_subscription(obj.get("id"))
+            if user:
+                db.set_premium(user["id"], False)
+
+    return jsonify({"received": True})
 
 
 # ---------- Admin ----------

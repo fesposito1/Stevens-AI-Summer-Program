@@ -199,6 +199,38 @@ function showApp(username, isAdmin, isPremium) {
   document.getElementById("current-username").textContent = username;
   document.getElementById("avatar-btn").textContent = username.charAt(0).toUpperCase();
   document.getElementById("admin-tab-btn").classList.toggle("hidden", !currentIsAdmin);
+
+  const checkoutParam = new URLSearchParams(window.location.search).get("checkout");
+  if (checkoutParam) {
+    window.history.replaceState({}, "", window.location.pathname);
+    activateTab("premium");
+
+    if (checkoutParam === "success") {
+      // Stripe's webhook (which actually flips is_premium) runs async and can lag a beat
+      // behind this redirect, so re-check auth shortly after landing rather than assuming.
+      setTimeout(async () => {
+        const res = await fetch("/api/auth/me");
+        const data = await res.json();
+        currentIsPremium = !!data.is_premium;
+        renderPremiumPanel();
+        const msgEl = document.getElementById("premium-message");
+        if (msgEl) {
+          msgEl.textContent = currentIsPremium
+            ? "🎉 Payment successful — welcome to Premium!"
+            : "Payment received — confirming with Stripe, refresh in a few seconds if Premium doesn't show yet.";
+          msgEl.classList.remove("hidden");
+        }
+      }, 1500);
+    } else {
+      const msgEl = document.getElementById("premium-message");
+      if (msgEl) {
+        msgEl.textContent = "Checkout canceled — no charge was made.";
+        msgEl.classList.remove("hidden");
+      }
+    }
+    return;
+  }
+
   activateTab("home");
 }
 
@@ -1665,36 +1697,10 @@ function renderPremiumPanel() {
           </ul>
         </div>
         <button type="button" id="open-checkout-btn">Upgrade to Premium</button>
+        <p class="empty-note">Real Stripe Checkout in test mode — use card <code>4242 4242 4242 4242</code>, any future expiry, any CVC. No real charge.</p>
       </div>
     </div>
     <div id="premium-message" class="message hidden"></div>
-
-    <div id="checkout-modal-backdrop" class="modal-backdrop hidden">
-      <div class="modal-card">
-        <h3>Upgrade to Premium</h3>
-        <p class="empty-note">This is a demo checkout — no real payment is processed or stored anywhere.</p>
-        <form id="checkout-form">
-          <label>Cardholder Name
-            <input type="text" id="checkout-name" placeholder="Jane Doe" required />
-          </label>
-          <label>Card Number
-            <input type="text" id="checkout-card" placeholder="4242 4242 4242 4242" maxlength="19" required />
-          </label>
-          <div class="checkout-row">
-            <label>Expiry
-              <input type="text" id="checkout-expiry" placeholder="MM/YY" maxlength="5" required />
-            </label>
-            <label>CVC
-              <input type="text" id="checkout-cvc" placeholder="123" maxlength="4" required />
-            </label>
-          </div>
-          <div class="checkout-actions">
-            <button type="button" id="checkout-cancel-btn" class="checkout-cancel-btn">Cancel</button>
-            <button type="submit" id="checkout-submit-btn">Subscribe Now — $4.99/mo</button>
-          </div>
-        </form>
-      </div>
-    </div>
   `;
 
   function showPremiumMessage(text) {
@@ -1703,53 +1709,28 @@ function renderPremiumPanel() {
     el.classList.toggle("hidden", !text);
   }
 
-  const backdrop = document.getElementById("checkout-modal-backdrop");
+  document.getElementById("open-checkout-btn").addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    btn.disabled = true;
+    btn.textContent = "Redirecting to Stripe...";
 
-  document.getElementById("open-checkout-btn").addEventListener("click", () => {
-    backdrop.classList.remove("hidden");
-  });
-  document.getElementById("checkout-cancel-btn").addEventListener("click", () => {
-    backdrop.classList.add("hidden");
-  });
-  backdrop.addEventListener("click", (event) => {
-    if (event.target === backdrop) backdrop.classList.add("hidden");
-  });
+    try {
+      const res = await fetch("/api/premium/checkout", { method: "POST" });
+      const data = await res.json();
 
-  const cardInput = document.getElementById("checkout-card");
-  cardInput.addEventListener("input", () => {
-    const digits = cardInput.value.replace(/\D/g, "").slice(0, 16);
-    cardInput.value = digits.replace(/(.{4})/g, "$1 ").trim();
-  });
-  const expiryInput = document.getElementById("checkout-expiry");
-  expiryInput.addEventListener("input", () => {
-    const digits = expiryInput.value.replace(/\D/g, "").slice(0, 4);
-    expiryInput.value = digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
-  });
+      if (!res.ok) {
+        btn.disabled = false;
+        btn.textContent = "Upgrade to Premium";
+        showPremiumMessage(data.error || "Couldn't start checkout.");
+        return;
+      }
 
-  document.getElementById("checkout-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const submitBtn = document.getElementById("checkout-submit-btn");
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Processing payment...";
-
-    // Card fields above are decorative only — nothing entered in this form is ever sent
-    // anywhere. This is a demo checkout with no real payment processor involved.
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-
-    const res = await fetch("/api/account/upgrade-premium", { method: "POST" });
-    const data = await res.json();
-
-    if (!res.ok) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Subscribe Now — $4.99/mo";
-      showPremiumMessage(data.error || "Something went wrong.");
-      return;
+      window.location.href = data.checkout_url;
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "Upgrade to Premium";
+      showPremiumMessage("Something went wrong reaching the server.");
     }
-
-    currentIsPremium = true;
-    backdrop.classList.add("hidden");
-    renderPremiumPanel();
-    showPremiumMessage("🎉 Welcome to Premium!");
   });
 }
 
