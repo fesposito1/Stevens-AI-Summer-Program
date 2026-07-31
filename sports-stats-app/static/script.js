@@ -5,8 +5,7 @@ let currentIsAdmin = false;
 let currentIsPremium = false;
 
 const ALL_TAB_IDS = [
-  "tab-home", "tab-your-stats", "tab-calendar", "tab-player-stats", "tab-compare",
-  "tab-leaderboard", "tab-projections", "tab-coach", "tab-premium", "tab-account", "tab-admin",
+  "tab-home", "tab-my-stats", "tab-explore", "tab-coach", "tab-premium", "tab-account", "tab-admin",
 ];
 
 window.addEventListener("DOMContentLoaded", init);
@@ -179,6 +178,7 @@ function setupAuthUI() {
       const el = document.getElementById(id);
       el.innerHTML = "";
       delete el.dataset.initialized;
+      delete el.dataset.shellReady;
     });
     showAuthScreen();
   });
@@ -221,16 +221,62 @@ function activateTab(tab) {
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
 
   if (tab === "home") renderHomePanel();
-  if (tab === "your-stats") renderYourStats();
-  if (tab === "calendar") renderCalendarPanel();
-  if (tab === "player-stats") renderPlayerStatsPanel();
-  if (tab === "compare") renderComparePanel();
-  if (tab === "leaderboard") renderLeaderboardPanel();
-  if (tab === "projections") renderProjectionsPanel();
+  if (tab === "my-stats") renderMyStatsPage();
+  if (tab === "explore") renderExplorePage();
   if (tab === "coach") renderCoachPanel();
   if (tab === "premium") renderPremiumPanel();
   if (tab === "account") renderAccountPanel();
   if (tab === "admin") renderAdminPanel();
+}
+
+// ---------- Consolidated pages ----------
+
+function renderMyStatsPage() {
+  const panel = document.getElementById("tab-my-stats");
+  if (!panel.dataset.shellReady) {
+    panel.innerHTML = `
+      <section class="page-section">
+        <h2 class="page-section-title">Your Stats</h2>
+        <div id="section-your-stats"></div>
+      </section>
+      <section class="page-section">
+        <h2 class="page-section-title">Calendar</h2>
+        <div id="section-calendar"></div>
+      </section>
+      <section class="page-section">
+        <h2 class="page-section-title">Projections</h2>
+        <div id="section-projections"></div>
+      </section>
+    `;
+    panel.dataset.shellReady = "true";
+  }
+  renderYourStats();
+  renderCalendarPanel();
+  renderProjectionsPanel();
+}
+
+function renderExplorePage() {
+  const panel = document.getElementById("tab-explore");
+  if (!panel.dataset.shellReady) {
+    panel.innerHTML = `
+      <section class="page-section">
+        <h2 class="page-section-title">Player &amp; Team Search</h2>
+        <div id="section-player-stats"></div>
+      </section>
+      <section class="page-section">
+        <h2 class="page-section-title">Compare Yourself</h2>
+        <div id="section-compare"></div>
+      </section>
+      <section class="page-section">
+        <h2 class="page-section-title">Leaderboard</h2>
+        <div id="section-leaderboard"></div>
+      </section>
+    `;
+    panel.dataset.shellReady = "true";
+  }
+  renderPlayerStatsPanel();
+  renderComparePanel();
+  renderLeaderboardPanel();
 }
 
 // ---------- Shared detail-rendering helpers ----------
@@ -727,7 +773,7 @@ function setupSearchWidget({ formId, inputId, resultsId, detailId, messageId, ty
 // ---------- Player Stats tab ----------
 
 function renderPlayerStatsPanel() {
-  const panel = document.getElementById("tab-player-stats");
+  const panel = document.getElementById("section-player-stats");
   if (panel.dataset.initialized) return;
   panel.dataset.initialized = "true";
 
@@ -755,7 +801,7 @@ function renderPlayerStatsPanel() {
 // ---------- Compare tab ----------
 
 function renderComparePanel() {
-  const panel = document.getElementById("tab-compare");
+  const panel = document.getElementById("section-compare");
   if (panel.dataset.initialized) return;
   panel.dataset.initialized = "true";
 
@@ -876,7 +922,7 @@ function renderPieChart(slices) {
 }
 
 async function viewPlayerById(playerId) {
-  activateTab("player-stats");
+  activateTab("explore");
   const resultsEl = document.getElementById("ps-results");
   const detailEl = document.getElementById("ps-detail");
   const messageEl = document.getElementById("ps-message");
@@ -1034,7 +1080,7 @@ async function renderHomePanel() {
 
   const addFirstStatBtn = document.getElementById("home-add-first-stat-btn");
   if (addFirstStatBtn) {
-    addFirstStatBtn.addEventListener("click", () => activateTab("your-stats"));
+    addFirstStatBtn.addEventListener("click", () => activateTab("my-stats"));
   }
 
   panel.querySelectorAll(".followed-card").forEach((card) => {
@@ -1061,7 +1107,7 @@ async function renderHomePanel() {
 // ---------- Your Stats tab ----------
 
 function renderYourStats() {
-  const panel = document.getElementById("tab-your-stats");
+  const panel = document.getElementById("section-your-stats");
   const sports = Object.keys(metricsCatalog);
 
   panel.innerHTML = `
@@ -1197,7 +1243,7 @@ function formatEventTime(event_time) {
 }
 
 async function renderCalendarPanel() {
-  const panel = document.getElementById("tab-calendar");
+  const panel = document.getElementById("section-calendar");
   const now = new Date();
   if (!calendarViewDate) calendarViewDate = { year: now.getFullYear(), month: now.getMonth() };
   const todayYmd = ymd(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1373,7 +1419,7 @@ function renderCalendarDayEvents(dayEvents) {
 // ---------- Leaderboard tab ----------
 
 async function renderLeaderboardPanel() {
-  const panel = document.getElementById("tab-leaderboard");
+  const panel = document.getElementById("section-leaderboard");
   const res = await fetch("/api/leaderboard/options");
   const data = await res.json();
   const options = data.options || [];
@@ -1438,7 +1484,7 @@ async function renderLeaderboardPanel() {
 // ---------- Projections tab ----------
 
 async function renderProjectionsPanel() {
-  const panel = document.getElementById("tab-projections");
+  const panel = document.getElementById("section-projections");
   const res = await fetch("/api/stats/me");
   const data = await res.json();
 
@@ -2106,6 +2152,7 @@ function renderAccountPanel() {
       const el = document.getElementById(id);
       el.innerHTML = "";
       delete el.dataset.initialized;
+      delete el.dataset.shellReady;
     });
     showAuthScreen();
   });

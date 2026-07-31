@@ -72,6 +72,17 @@ static/style.css     App styling (CSS custom properties for colors, layout, comp
 requirements.txt     Local-dev Python dependencies (Flask, requests, pywebview, google-generativeai)
 ```
 
+## Navigation
+
+The bottom nav is consolidated into 7 pages (down from 11+ separate tabs), each a normal
+scrollable page rather than a small isolated panel:
+
+- **Home** — dashboard overview, today's reminders, followed players, quick stats
+- **My Stats** — three sections on one scrollable page: Your Stats (log/history), Calendar, Projections
+- **Explore** — three sections on one scrollable page: Player/Team Search, Compare, Leaderboard
+- **Coach**, **Premium**, **Account** — each its own focused page
+- **Admin** — hidden unless you're logged in as the seeded admin account
+
 ## Features
 
 - **Login / Sign up** — accounts are local to your machine (SQLite), passwords hashed with
