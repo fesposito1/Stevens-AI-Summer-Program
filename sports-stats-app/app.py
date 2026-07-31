@@ -422,7 +422,13 @@ def signup():
     session["username"] = username
     session["is_admin"] = False
     session["is_premium"] = False
-    return jsonify({"username": username, "is_admin": False, "is_premium": False})
+    return jsonify({
+        "username": username,
+        "is_admin": False,
+        "is_premium": False,
+        "profile_photo": None,
+        "theme": "light",
+    })
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -446,6 +452,8 @@ def login():
         "username": user["username"],
         "is_admin": bool(user.get("is_admin")),
         "is_premium": bool(user.get("is_premium")),
+        "profile_photo": user.get("profile_photo"),
+        "theme": user.get("theme") or "light",
     })
 
 
@@ -459,10 +467,16 @@ def logout():
 def auth_me():
     if "user_id" not in session:
         return jsonify({"username": None})
+    user = db.get_user_by_id(session["user_id"])
+    if not user:
+        session.clear()
+        return jsonify({"username": None})
     return jsonify({
         "username": session.get("username"),
         "is_admin": bool(session.get("is_admin")),
         "is_premium": bool(session.get("is_premium")),
+        "profile_photo": user.get("profile_photo"),
+        "theme": user.get("theme") or "light",
     })
 
 
@@ -554,6 +568,43 @@ def account_delete():
     db.delete_user(user["id"])
     session.clear()
     return jsonify({"ok": True})
+
+
+MAX_PROFILE_PHOTO_CHARS = 2_900_000  # ~2MB image after base64 encoding
+
+
+@app.route("/api/account/profile-photo", methods=["POST"])
+@login_required
+def account_set_profile_photo():
+    payload = request.get_json(silent=True) or {}
+    photo = payload.get("photo") or ""
+
+    if not photo.startswith("data:image/"):
+        return jsonify({"error": "Please upload a valid image file."}), 400
+    if len(photo) > MAX_PROFILE_PHOTO_CHARS:
+        return jsonify({"error": "Image is too large — please choose one under 2MB."}), 400
+
+    db.update_profile_photo(session["user_id"], photo)
+    return jsonify({"ok": True, "profile_photo": photo})
+
+
+@app.route("/api/account/profile-photo", methods=["DELETE"])
+@login_required
+def account_delete_profile_photo():
+    db.update_profile_photo(session["user_id"], None)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/account/theme", methods=["POST"])
+@login_required
+def account_set_theme():
+    payload = request.get_json(silent=True) or {}
+    theme = payload.get("theme") or "light"
+    if theme not in ("light", "dark"):
+        return jsonify({"error": "Theme must be 'light' or 'dark'."}), 400
+
+    db.update_theme(session["user_id"], theme)
+    return jsonify({"ok": True, "theme": theme})
 
 
 @app.route("/api/account/upgrade-premium", methods=["POST"])

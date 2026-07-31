@@ -3,9 +3,11 @@ let gameMetricKeysBySport = {};
 let currentUsername = null;
 let currentIsAdmin = false;
 let currentIsPremium = false;
+let currentProfilePhoto = null;
+let currentTheme = "light";
 
 const ALL_TAB_IDS = [
-  "tab-home", "tab-my-stats", "tab-explore", "tab-coach", "tab-premium", "tab-account", "tab-admin",
+  "tab-home", "tab-stats", "tab-calendar", "tab-leaderboard", "tab-coach", "tab-account", "tab-admin",
 ];
 
 window.addEventListener("DOMContentLoaded", init);
@@ -44,6 +46,27 @@ function setupAvatarMenu() {
       closeMenu();
     }
   });
+
+  document.getElementById("account-menu-btn").addEventListener("click", () => {
+    closeMenu();
+    activateTab("account");
+  });
+  document.getElementById("admin-menu-btn").addEventListener("click", () => {
+    closeMenu();
+    activateTab("admin");
+  });
+}
+
+function renderAvatarButton() {
+  const btn = document.getElementById("avatar-btn");
+  btn.innerHTML = currentProfilePhoto
+    ? `<img src="${currentProfilePhoto}" alt="" class="avatar-btn-img" />`
+    : (currentUsername || "?").charAt(0).toUpperCase();
+}
+
+function applyTheme(theme) {
+  currentTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", currentTheme);
 }
 
 async function loadMetricsCatalog() {
@@ -57,7 +80,7 @@ async function checkAuth() {
   const res = await fetch("/api/auth/me");
   const data = await res.json();
   if (data.username) {
-    showApp(data.username, data.is_admin, data.is_premium);
+    showApp(data.username, data.is_admin, data.is_premium, data.profile_photo, data.theme);
   } else {
     showAuthScreen();
   }
@@ -110,7 +133,7 @@ function setupAuthUI() {
       showAuthMessage(data.error || "Login failed.");
       return;
     }
-    showApp(data.username, data.is_admin, data.is_premium);
+    showApp(data.username, data.is_admin, data.is_premium, data.profile_photo, data.theme);
   });
 
   document.getElementById("signup-form").addEventListener("submit", async (event) => {
@@ -128,7 +151,7 @@ function setupAuthUI() {
       showAuthMessage(data.error || "Sign up failed.");
       return;
     }
-    showApp(data.username, data.is_admin, data.is_premium);
+    showApp(data.username, data.is_admin, data.is_premium, data.profile_photo, data.theme);
   });
 
   document.getElementById("forgot-username-form").addEventListener("submit", async (event) => {
@@ -174,6 +197,8 @@ function setupAuthUI() {
     currentUsername = null;
     currentIsAdmin = false;
     currentIsPremium = false;
+    currentProfilePhoto = null;
+    applyTheme("light");
     ALL_TAB_IDS.forEach((id) => {
       const el = document.getElementById(id);
       el.innerHTML = "";
@@ -190,20 +215,22 @@ function showAuthMessage(text) {
   el.classList.toggle("hidden", !text);
 }
 
-function showApp(username, isAdmin, isPremium) {
+function showApp(username, isAdmin, isPremium, profilePhoto, theme) {
   currentUsername = username;
   currentIsAdmin = !!isAdmin;
   currentIsPremium = !!isPremium;
+  currentProfilePhoto = profilePhoto || null;
+  applyTheme(theme || "light");
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("current-username").textContent = username;
-  document.getElementById("avatar-btn").textContent = username.charAt(0).toUpperCase();
-  document.getElementById("admin-tab-btn").classList.toggle("hidden", !currentIsAdmin);
+  renderAvatarButton();
+  document.getElementById("admin-menu-btn").classList.toggle("hidden", !currentIsAdmin);
 
   const checkoutParam = new URLSearchParams(window.location.search).get("checkout");
   if (checkoutParam) {
     window.history.replaceState({}, "", window.location.pathname);
-    activateTab("premium");
+    goToPremium();
 
     if (checkoutParam === "success") {
       // Stripe's webhook (which actually flips is_premium) runs async and can lag a beat
@@ -253,62 +280,49 @@ function activateTab(tab) {
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${tab}`));
 
   if (tab === "home") renderHomePanel();
-  if (tab === "my-stats") renderMyStatsPage();
-  if (tab === "explore") renderExplorePage();
+  if (tab === "stats") renderStatsHub();
+  if (tab === "calendar") renderCalendarPanel();
+  if (tab === "leaderboard") renderLeaderboardPanel();
   if (tab === "coach") renderCoachPanel();
-  if (tab === "premium") renderPremiumPanel();
   if (tab === "account") renderAccountPanel();
   if (tab === "admin") renderAdminPanel();
 }
 
-// ---------- Consolidated pages ----------
+// ---------- Stats hub (Log & History, Player Stats, Compare, Projections) ----------
 
-function renderMyStatsPage() {
-  const panel = document.getElementById("tab-my-stats");
-  if (!panel.dataset.shellReady) {
+function renderStatsHub() {
+  const panel = document.getElementById("tab-stats");
+  if (!panel.dataset.initialized) {
+    panel.dataset.initialized = "true";
     panel.innerHTML = `
-      <section class="page-section">
-        <h2 class="page-section-title">Your Stats</h2>
-        <div id="section-your-stats"></div>
-      </section>
-      <section class="page-section">
-        <h2 class="page-section-title">Calendar</h2>
-        <div id="section-calendar"></div>
-      </section>
-      <section class="page-section">
-        <h2 class="page-section-title">Projections</h2>
-        <div id="section-projections"></div>
-      </section>
+      <div class="sub-tab-bar" id="stats-sub-tabs">
+        <button type="button" class="sub-tab-btn active" data-subtab="log">Log &amp; History</button>
+        <button type="button" class="sub-tab-btn" data-subtab="players">Player Stats</button>
+        <button type="button" class="sub-tab-btn" data-subtab="compare">Compare</button>
+        <button type="button" class="sub-tab-btn" data-subtab="projections">Projections</button>
+      </div>
+      <section id="stats-sub-log" class="sub-tab-panel active"></section>
+      <section id="stats-sub-players" class="sub-tab-panel"></section>
+      <section id="stats-sub-compare" class="sub-tab-panel"></section>
+      <section id="stats-sub-projections" class="sub-tab-panel"></section>
     `;
-    panel.dataset.shellReady = "true";
+    panel.querySelectorAll(".sub-tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => activateStatsSubTab(btn.dataset.subtab));
+    });
   }
-  renderYourStats();
-  renderCalendarPanel();
-  renderProjectionsPanel();
+  const active = panel.querySelector(".sub-tab-btn.active");
+  activateStatsSubTab(active ? active.dataset.subtab : "log");
 }
 
-function renderExplorePage() {
-  const panel = document.getElementById("tab-explore");
-  if (!panel.dataset.shellReady) {
-    panel.innerHTML = `
-      <section class="page-section">
-        <h2 class="page-section-title">Player &amp; Team Search</h2>
-        <div id="section-player-stats"></div>
-      </section>
-      <section class="page-section">
-        <h2 class="page-section-title">Compare Yourself</h2>
-        <div id="section-compare"></div>
-      </section>
-      <section class="page-section">
-        <h2 class="page-section-title">Leaderboard</h2>
-        <div id="section-leaderboard"></div>
-      </section>
-    `;
-    panel.dataset.shellReady = "true";
-  }
-  renderPlayerStatsPanel();
-  renderComparePanel();
-  renderLeaderboardPanel();
+function activateStatsSubTab(subtab) {
+  const panel = document.getElementById("tab-stats");
+  panel.querySelectorAll(".sub-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.subtab === subtab));
+  panel.querySelectorAll(".sub-tab-panel").forEach((p) => p.classList.toggle("active", p.id === `stats-sub-${subtab}`));
+
+  if (subtab === "log") renderYourStats();
+  if (subtab === "players") renderPlayerStatsPanel();
+  if (subtab === "compare") renderComparePanel();
+  if (subtab === "projections") renderProjectionsPanel();
 }
 
 // ---------- Shared detail-rendering helpers ----------
@@ -627,7 +641,7 @@ async function renderCompareDetail(container, item, data, onBack) {
     }
 
     const msg = document.getElementById("cmp-bio-save-msg");
-    msg.textContent = "Saved to Your Stats!";
+    msg.textContent = "Saved to Stats!";
     msg.classList.remove("hidden");
     setTimeout(() => msg.classList.add("hidden"), 2500);
   });
@@ -737,7 +751,7 @@ function setupSearchWidget({ formId, inputId, resultsId, detailId, messageId, ty
 // ---------- Player Stats tab ----------
 
 function renderPlayerStatsPanel() {
-  const panel = document.getElementById("section-player-stats");
+  const panel = document.getElementById("stats-sub-players");
   if (panel.dataset.initialized) return;
   panel.dataset.initialized = "true";
 
@@ -765,7 +779,7 @@ function renderPlayerStatsPanel() {
 // ---------- Compare tab ----------
 
 function renderComparePanel() {
-  const panel = document.getElementById("section-compare");
+  const panel = document.getElementById("stats-sub-compare");
   if (panel.dataset.initialized) return;
   panel.dataset.initialized = "true";
 
@@ -886,7 +900,8 @@ function renderPieChart(slices) {
 }
 
 async function viewPlayerById(playerId) {
-  activateTab("explore");
+  activateTab("stats");
+  activateStatsSubTab("players");
   const resultsEl = document.getElementById("ps-results");
   const detailEl = document.getElementById("ps-detail");
   const messageEl = document.getElementById("ps-message");
@@ -953,7 +968,7 @@ async function renderHomePanel() {
       <div class="analytics-card"><div class="analytics-label">Consistency</div><div class="skeleton skeleton-text"></div></div>
       <div class="analytics-card"><div class="analytics-label">Average Rating</div><div class="skeleton skeleton-text"></div></div>
     </div>
-    <p class="empty-note" style="margin-top: 0.9rem;">Log at least 2 entries for the same metric in Your Stats to see a growth trend here.</p>
+    <p class="empty-note" style="margin-top: 0.9rem;">Log at least 2 entries for the same metric in Stats to see a growth trend here.</p>
   `;
   if (eligible.length > 0) {
     const [topKey, topMeta] = eligible[0];
@@ -1044,7 +1059,7 @@ async function renderHomePanel() {
 
   const addFirstStatBtn = document.getElementById("home-add-first-stat-btn");
   if (addFirstStatBtn) {
-    addFirstStatBtn.addEventListener("click", () => activateTab("my-stats"));
+    addFirstStatBtn.addEventListener("click", () => activateTab("stats"));
   }
 
   panel.querySelectorAll(".followed-card").forEach((card) => {
@@ -1068,10 +1083,10 @@ async function renderHomePanel() {
   });
 }
 
-// ---------- Your Stats tab ----------
+// ---------- Stats: Log & History ----------
 
 function renderYourStats() {
-  const panel = document.getElementById("section-your-stats");
+  const panel = document.getElementById("stats-sub-log");
   const sports = Object.keys(metricsCatalog);
 
   panel.innerHTML = `
@@ -1389,7 +1404,7 @@ async function renderLeaderboardPanel() {
   const options = data.options || [];
 
   if (options.length === 0) {
-    panel.innerHTML = `<p class="empty-note">No leaderboard data yet — log some sport metrics in Your Stats first (yours and other users' entries will show up here).</p>`;
+    panel.innerHTML = `<p class="empty-note">No leaderboard data yet — log some sport metrics in Stats first (yours and other users' entries will show up here).</p>`;
     return;
   }
 
@@ -1450,7 +1465,7 @@ async function renderLeaderboardPanel() {
 // ---------- Projections tab ----------
 
 async function renderProjectionsPanel() {
-  const panel = document.getElementById("section-projections");
+  const panel = document.getElementById("stats-sub-projections");
   const res = await fetch("/api/stats/me");
   const data = await res.json();
 
@@ -1462,7 +1477,7 @@ async function renderProjectionsPanel() {
   const eligible = Object.entries(counts).filter(([, v]) => v.count >= 2);
 
   if (eligible.length === 0) {
-    panel.innerHTML = `<p class="empty-note">Log at least 2 entries for the same metric (in Your Stats) to see a projection.</p>`;
+    panel.innerHTML = `<p class="empty-note">Log at least 2 entries for the same metric (in Stats) to see a projection.</p>`;
     return;
   }
 
@@ -1525,7 +1540,7 @@ async function renderProjectionsPanel() {
     if (upgradeLink) {
       upgradeLink.addEventListener("click", (e) => {
         e.preventDefault();
-        activateTab("premium");
+        goToPremium();
       });
     }
   }
@@ -1621,7 +1636,7 @@ function renderCoachPanel() {
           messageEl.classList.remove("hidden");
           document.getElementById("coach-upgrade-link").addEventListener("click", (e) => {
             e.preventDefault();
-            activateTab("premium");
+            goToPremium();
           });
           return;
         }
@@ -1639,10 +1654,17 @@ function renderCoachPanel() {
   });
 }
 
-// ---------- Premium ----------
+// ---------- Premium (embedded in Account) ----------
+
+function goToPremium() {
+  activateTab("account");
+  const card = document.getElementById("account-premium-panel");
+  if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function renderPremiumPanel() {
-  const panel = document.getElementById("tab-premium");
+  const panel = document.getElementById("account-premium-panel");
+  if (!panel) return;
 
   if (currentIsPremium) {
     panel.innerHTML = `
@@ -1673,7 +1695,7 @@ function renderPremiumPanel() {
         <div class="pricing-price">$0<span>/mo</span></div>
         <ul class="pricing-features">
           <li>Full team &amp; player search</li>
-          <li>Your Stats, Calendar, Compare, Leaderboard</li>
+          <li>Stats, Calendar, Leaderboard</li>
           <li>Projections — 30-day estimate</li>
           <li>AI Coach — 5 messages/day</li>
         </ul>
@@ -1979,6 +2001,27 @@ function renderAccountPanel() {
 
   panel.innerHTML = `
     <div class="category">
+      <h3>Profile Photo</h3>
+      <div class="profile-photo-row">
+        <div class="profile-photo-preview" id="account-photo-preview"></div>
+        <div class="profile-photo-actions">
+          <label class="file-btn" for="account-photo-input">Upload Photo</label>
+          <input type="file" id="account-photo-input" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" />
+          <button type="button" id="account-photo-remove-btn" class="secondary-btn">Remove Photo</button>
+        </div>
+      </div>
+      <p class="empty-note">JPG, PNG, WEBP, or GIF. Max 2MB.</p>
+    </div>
+    <div class="category">
+      <h3>Appearance</h3>
+      <p class="empty-note">Choose how Sports Stats looks on this device.</p>
+      <div class="theme-toggle" id="theme-toggle">
+        <button type="button" class="theme-toggle-btn" data-theme-choice="light">&#9728;&#65039; Light</button>
+        <button type="button" class="theme-toggle-btn" data-theme-choice="dark">&#127769; Dark</button>
+      </div>
+    </div>
+    <div id="account-premium-panel"></div>
+    <div class="category">
       <h3>Change Password</h3>
       <form id="account-password-form" class="stat-form">
         <label>Current password
@@ -2024,6 +2067,75 @@ function renderAccountPanel() {
     el.textContent = text;
     el.classList.toggle("hidden", !text);
   }
+
+  function renderProfilePhotoPreview() {
+    const el = document.getElementById("account-photo-preview");
+    el.innerHTML = currentProfilePhoto
+      ? `<img src="${currentProfilePhoto}" alt="Profile photo" />`
+      : (currentUsername || "?").charAt(0).toUpperCase();
+  }
+  renderProfilePhotoPreview();
+
+  document.getElementById("account-photo-input").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      showAccountMessage("That image is too large — please choose one under 2MB.");
+      event.target.value = "";
+      return;
+    }
+
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const res = await fetch("/api/account/profile-photo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photo: dataUrl }),
+    });
+    const data = await res.json();
+    event.target.value = "";
+    if (!res.ok) {
+      showAccountMessage(data.error || "Could not upload photo.");
+      return;
+    }
+    currentProfilePhoto = data.profile_photo;
+    renderProfilePhotoPreview();
+    renderAvatarButton();
+    showAccountMessage("Profile photo updated.");
+  });
+
+  document.getElementById("account-photo-remove-btn").addEventListener("click", async () => {
+    const res = await fetch("/api/account/profile-photo", { method: "DELETE" });
+    if (!res.ok) {
+      showAccountMessage("Could not remove photo.");
+      return;
+    }
+    currentProfilePhoto = null;
+    renderProfilePhotoPreview();
+    renderAvatarButton();
+    showAccountMessage("Profile photo removed.");
+  });
+
+  document.querySelectorAll("#theme-toggle .theme-toggle-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.themeChoice === currentTheme);
+    btn.addEventListener("click", async () => {
+      const theme = btn.dataset.themeChoice;
+      applyTheme(theme);
+      document.querySelectorAll("#theme-toggle .theme-toggle-btn").forEach((b) =>
+        b.classList.toggle("active", b.dataset.themeChoice === theme)
+      );
+      await fetch("/api/account/theme", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ theme }),
+      });
+    });
+  });
 
   document.getElementById("account-password-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -2071,6 +2183,8 @@ function renderAccountPanel() {
     currentUsername = null;
     currentIsAdmin = false;
     currentIsPremium = false;
+    currentProfilePhoto = null;
+    applyTheme("light");
     ALL_TAB_IDS.forEach((id) => {
       const el = document.getElementById(id);
       el.innerHTML = "";
@@ -2079,4 +2193,6 @@ function renderAccountPanel() {
     });
     showAuthScreen();
   });
+
+  renderPremiumPanel();
 }
