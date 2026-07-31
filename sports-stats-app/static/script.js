@@ -526,6 +526,19 @@ async function renderCompareDetail(container, item, data, onBack) {
   };
   const hasBio = info.height_in != null || info.weight_lbs != null || info.age != null;
 
+  const mappedSport = mapApiSportToMetricsSport(info.sport);
+  const skillKeys = mappedSport ? gameMetricKeysBySport[mappedSport] || [] : [];
+  const skillMetrics = mappedSport
+    ? (metricsCatalog[mappedSport] || []).filter((m) => skillKeys.includes(m.key))
+    : [];
+  const hasSkills = skillMetrics.length > 0;
+  const skillInputsHtml = skillMetrics
+    .map((m) => {
+      const prefill = latest[`${mappedSport}|${m.key}`];
+      return `<label>${m.label}${m.unit ? ` (${m.unit})` : ""}<input type="number" step="any" id="cmp-skill-${m.key}" value="${prefill ?? ""}" placeholder="e.g. 0" /></label>`;
+    })
+    .join("");
+
   container.innerHTML = `
     ${backLinkHtml()}
     <div class="detail-header">
@@ -557,51 +570,140 @@ async function renderCompareDetail(container, item, data, onBack) {
           : `<p class="empty-note">TheSportsDB doesn't have bio data (height/weight/age) for ${info.name}.</p>`
       }
     </div>
+
+    ${hasSkills ? `
+    <div class="category">
+      <h3>Compare Your ${mappedSport} Skills</h3>
+      <p class="empty-note">
+        TheSportsDB doesn't provide ${info.name}'s personal goals/points stats. You can get an
+        AI-generated ballpark estimate instead — <strong>not verified real data</strong>, just a
+        rough approximation from general knowledge.
+      </p>
+      <div class="compare-form">${skillInputsHtml}</div>
+      <div class="compare-form">
+        <button type="button" id="cmp-skill-btn">Compare</button>
+        <button type="button" id="cmp-skill-save-btn">Save to My Stats</button>
+        <button type="button" id="cmp-ai-estimate-btn">&#129302; Get AI Estimate for ${info.name}</button>
+      </div>
+      <div id="cmp-ai-message" class="empty-note hidden"></div>
+      <div id="cmp-skill-result"></div>
+    </div>
+    ` : ""}
   `;
   container.classList.remove("hidden");
   document.getElementById("back-link").addEventListener("click", onBack);
 
-  if (!hasBio) return;
-
-  const runBioCompare = () => {
-    const you = {
-      height: parseFloat(document.getElementById("cmp-bio-height").value),
-      weight: parseFloat(document.getElementById("cmp-bio-weight").value),
-      age: parseFloat(document.getElementById("cmp-bio-age").value),
+  if (hasBio) {
+    const runBioCompare = () => {
+      const you = {
+        height: parseFloat(document.getElementById("cmp-bio-height").value),
+        weight: parseFloat(document.getElementById("cmp-bio-weight").value),
+        age: parseFloat(document.getElementById("cmp-bio-age").value),
+      };
+      const rows = [
+        compareRow("Height", you.height, info.height_in, " in", info.name),
+        compareRow("Weight", you.weight, info.weight_lbs, " lbs", info.name),
+        compareRow("Age", you.age, info.age, " yrs", info.name),
+      ].join("");
+      document.getElementById("cmp-bio-result").innerHTML = rows;
     };
-    const rows = [
-      compareRow("Height", you.height, info.height_in, " in", info.name),
-      compareRow("Weight", you.weight, info.weight_lbs, " lbs", info.name),
-      compareRow("Age", you.age, info.age, " yrs", info.name),
-    ].join("");
-    document.getElementById("cmp-bio-result").innerHTML = rows;
-  };
 
-  document.getElementById("cmp-bio-btn").addEventListener("click", runBioCompare);
+    document.getElementById("cmp-bio-btn").addEventListener("click", runBioCompare);
 
-  document.getElementById("cmp-bio-save-btn").addEventListener("click", async () => {
-    const entries = [
-      { sport: "Bio", metric_key: "height_in", value: document.getElementById("cmp-bio-height").value },
-      { sport: "Bio", metric_key: "weight_lbs", value: document.getElementById("cmp-bio-weight").value },
-      { sport: "Bio", metric_key: "age", value: document.getElementById("cmp-bio-age").value },
-    ].filter((e) => e.value !== "");
+    document.getElementById("cmp-bio-save-btn").addEventListener("click", async () => {
+      const entries = [
+        { sport: "Bio", metric_key: "height_in", value: document.getElementById("cmp-bio-height").value },
+        { sport: "Bio", metric_key: "weight_lbs", value: document.getElementById("cmp-bio-weight").value },
+        { sport: "Bio", metric_key: "age", value: document.getElementById("cmp-bio-age").value },
+      ].filter((e) => e.value !== "");
 
-    for (const entry of entries) {
-      await fetch("/api/stats", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(entry),
-      });
+      for (const entry of entries) {
+        await fetch("/api/stats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(entry),
+        });
+      }
+
+      const msg = document.getElementById("cmp-bio-save-msg");
+      msg.textContent = "Saved to Your Stats!";
+      msg.classList.remove("hidden");
+      setTimeout(() => msg.classList.add("hidden"), 2500);
+    });
+
+    if (bio.height_in !== undefined || bio.weight_lbs !== undefined || bio.age !== undefined) {
+      runBioCompare();
+    }
+  }
+
+  if (hasSkills) {
+    let aiEstimates = null;
+    const aiMsgEl = document.getElementById("cmp-ai-message");
+
+    function showAiMessage(text) {
+      aiMsgEl.textContent = text;
+      aiMsgEl.classList.toggle("hidden", !text);
     }
 
-    const msg = document.getElementById("cmp-bio-save-msg");
-    msg.textContent = "Saved to Your Stats!";
-    msg.classList.remove("hidden");
-    setTimeout(() => msg.classList.add("hidden"), 2500);
-  });
+    const runSkillCompare = () => {
+      const athleteLabel = aiEstimates ? `${info.name} (AI estimate)` : info.name;
+      const rows = skillMetrics
+        .map((m) => {
+          const youVal = parseFloat(document.getElementById(`cmp-skill-${m.key}`).value);
+          const athleteVal = aiEstimates ? aiEstimates[m.key] : null;
+          return compareRow(m.label, youVal, athleteVal, m.unit ? ` ${m.unit}` : "", athleteLabel);
+        })
+        .join("");
+      document.getElementById("cmp-skill-result").innerHTML = rows;
+    };
 
-  if (bio.height_in !== undefined || bio.weight_lbs !== undefined || bio.age !== undefined) {
-    runBioCompare();
+    document.getElementById("cmp-skill-btn").addEventListener("click", runSkillCompare);
+
+    document.getElementById("cmp-skill-save-btn").addEventListener("click", async () => {
+      const entries = skillMetrics
+        .map((m) => ({ sport: mappedSport, metric_key: m.key, value: document.getElementById(`cmp-skill-${m.key}`).value }))
+        .filter((e) => e.value !== "");
+
+      for (const entry of entries) {
+        await fetch("/api/stats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(entry),
+        });
+      }
+
+      showAiMessage("Saved to Your Stats!");
+      setTimeout(() => showAiMessage(""), 2500);
+    });
+
+    document.getElementById("cmp-ai-estimate-btn").addEventListener("click", async () => {
+      showAiMessage("Asking Gemini for a rough estimate...");
+      try {
+        const res = await fetch("/api/compare/ai-stats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            player_name: info.name,
+            sport: mappedSport,
+            metrics: skillMetrics.map((m) => ({ key: m.key, label: m.label, unit: m.unit })),
+          }),
+        });
+        const resData = await res.json();
+        if (!res.ok) {
+          showAiMessage(resData.error || "Couldn't get an AI estimate right now.");
+          return;
+        }
+        aiEstimates = resData.estimates || {};
+        showAiMessage(`⚠ ${resData.disclaimer}`);
+        runSkillCompare();
+      } catch (err) {
+        showAiMessage("Something went wrong reaching the AI estimate.");
+      }
+    });
+
+    if (skillMetrics.some((m) => latest[`${mappedSport}|${m.key}`] !== undefined)) {
+      runSkillCompare();
+    }
   }
 }
 

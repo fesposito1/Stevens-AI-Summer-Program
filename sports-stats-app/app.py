@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import wraps
 from threading import Lock, Thread
+import json
 import logging
 import os
 import re
@@ -65,6 +66,14 @@ COACH_COOLDOWN_SECONDS = 2.0
 FREE_COACH_DAILY_LIMIT = 5
 _coach_last_call = {}
 _coach_lock = Lock()
+
+AI_STATS_COOLDOWN_SECONDS = 3.0
+AI_STATS_DISCLAIMER = (
+    "AI-generated estimate from general knowledge, not a verified real-time lookup — "
+    "may be inaccurate or out of date."
+)
+_ai_stats_last_call = {}
+_ai_stats_lock = Lock()
 
 # Premium (demo only — no real payment processor is involved anywhere in this app)
 PREMIUM_PRICE_DISPLAY = "$4.99/mo"
@@ -974,6 +983,60 @@ def coach_chat():
         return jsonify({"error": "Coach didn't return a response — try rephrasing."}), 502
 
     return jsonify({"reply": reply})
+
+
+# ---------- Compare: AI-estimated skill stats ----------
+
+@app.route("/api/compare/ai-stats", methods=["POST"])
+@login_required
+def compare_ai_stats():
+    payload = request.get_json(silent=True) or {}
+    player_name = (payload.get("player_name") or "").strip()
+    sport = (payload.get("sport") or "").strip()
+    metrics = payload.get("metrics") or []
+
+    if not player_name or not metrics:
+        return jsonify({"error": "player_name and metrics are required."}), 400
+
+    if genai is None:
+        return jsonify({"error": "AI estimates aren't available on this deployment (google-generativeai isn't installed)."}), 503
+
+    api_key = get_gemini_api_key()
+    if not api_key:
+        return jsonify({"error": "AI estimates need a Gemini API key configured — see the Coach setup in the README."}), 503
+
+    user_id = session["user_id"]
+    with _ai_stats_lock:
+        now = time.time()
+        if now - _ai_stats_last_call.get(user_id, 0) < AI_STATS_COOLDOWN_SECONDS:
+            return jsonify({"error": "Slow down a bit before requesting another estimate."}), 429
+        _ai_stats_last_call[user_id] = now
+
+    metric_desc = ", ".join(f"{m.get('label')} ({m.get('unit') or 'unitless'})" for m in metrics if m.get("key"))
+    prompt = (
+        f"Estimate {sport} statistics for the athlete \"{player_name}\" for these metrics: "
+        f"{metric_desc}. Give your best approximate, general-knowledge estimate for each — this "
+        "is not a live data lookup. If you are not reasonably confident about a specific stat for "
+        "this exact athlete, return null for it instead of guessing a plausible-sounding number."
+    )
+    schema = {
+        "type": "object",
+        "properties": {m["key"]: {"type": "number", "nullable": True} for m in metrics if m.get("key")},
+        "required": [m["key"] for m in metrics if m.get("key")],
+    }
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(GEMINI_MODEL)
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json", "response_schema": schema},
+        )
+        estimates = json.loads(response.text)
+    except Exception as exc:
+        return jsonify({"error": f"AI estimate request failed: {exc}"}), 502
+
+    return jsonify({"estimates": estimates, "disclaimer": AI_STATS_DISCLAIMER})
 
 
 # ---------- Followed players ----------
