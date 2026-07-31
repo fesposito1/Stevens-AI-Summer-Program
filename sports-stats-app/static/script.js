@@ -203,7 +203,6 @@ function setupAuthUI() {
       const el = document.getElementById(id);
       el.innerHTML = "";
       delete el.dataset.initialized;
-      delete el.dataset.shellReady;
     });
     showAuthScreen();
   });
@@ -1222,7 +1221,7 @@ function formatEventTime(event_time) {
 }
 
 async function renderCalendarPanel() {
-  const panel = document.getElementById("section-calendar");
+  const panel = document.getElementById("tab-calendar");
   const now = new Date();
   if (!calendarViewDate) calendarViewDate = { year: now.getFullYear(), month: now.getMonth() };
   const todayYmd = ymd(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1398,7 +1397,7 @@ function renderCalendarDayEvents(dayEvents) {
 // ---------- Leaderboard tab ----------
 
 async function renderLeaderboardPanel() {
-  const panel = document.getElementById("section-leaderboard");
+  const panel = document.getElementById("tab-leaderboard");
   const res = await fetch("/api/leaderboard/options");
   const data = await res.json();
   const options = data.options || [];
@@ -2189,7 +2188,6 @@ function renderAccountPanel() {
       const el = document.getElementById(id);
       el.innerHTML = "";
       delete el.dataset.initialized;
-      delete el.dataset.shellReady;
     });
     showAuthScreen();
   });
