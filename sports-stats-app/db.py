@@ -527,7 +527,7 @@ def get_leaderboard(sport, metric_key):
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT sl.user_id, u.username, sl.value, sl.unit, sl.direction, sl.recorded_at
+            SELECT sl.user_id, u.username, u.is_premium, sl.value, sl.unit, sl.direction, sl.recorded_at
             FROM stat_logs sl
             JOIN users u ON u.id = sl.user_id
             JOIN (

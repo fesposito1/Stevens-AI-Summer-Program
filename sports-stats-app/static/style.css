@@ -1523,6 +1523,11 @@ th {
   margin-bottom: 0.8rem;
 }
 
+.premium-tag {
+  font-size: 0.85rem;
+  filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.6));
+}
+
 /* ---------- Fake checkout modal ---------- */
 
 .modal-backdrop {

@@ -1398,7 +1398,9 @@ async function renderLeaderboardPanel() {
             .map(
               (e) => `
             <tr class="${e.username === currentUsername ? "highlight-row" : ""}">
-              <td>${e.rank}</td><td>${e.username}</td><td>${e.value}${e.unit ? " " + e.unit : ""}</td>
+              <td>${e.rank}</td>
+              <td>${e.username}${e.is_premium ? ` <span class="premium-tag" title="Premium member">&#11088;</span>` : ""}</td>
+              <td>${e.value}${e.unit ? " " + e.unit : ""}</td>
               <td>${new Date(e.recorded_at).toLocaleDateString()}</td>
             </tr>
           `
