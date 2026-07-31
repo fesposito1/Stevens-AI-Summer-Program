@@ -1676,6 +1676,14 @@ function renderPremiumPanel() {
           <li>AI Coach — unlimited messages</li>
           <li>Premium badge on Leaderboard</li>
         </ul>
+        <div class="pricing-coming-soon">
+          <div class="pricing-coming-soon-label">Coming Soon to Premium</div>
+          <ul class="pricing-features pricing-features-soon">
+            <li>Form &amp; positioning analysis from photos of you in action</li>
+            <li>Deeper comparisons — against pro athletes and D1 college athletes</li>
+            <li>Team Connect — group up with your team for shared stats and a strategist-mode AI Coach</li>
+          </ul>
+        </div>
         <button type="button" id="open-checkout-btn">Upgrade to Premium</button>
       </div>
     </div>

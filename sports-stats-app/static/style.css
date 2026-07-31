@@ -1413,6 +1413,35 @@ th {
   box-shadow: var(--shadow-sm);
 }
 
+.pricing-coming-soon {
+  margin: 0.2rem 0 1.2rem;
+  padding-top: 0.8rem;
+  border-top: 1px dashed var(--border);
+}
+
+.pricing-coming-soon-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  margin-bottom: 0.6rem;
+}
+
+.pricing-features-soon {
+  margin-bottom: 0;
+}
+
+.pricing-features-soon li {
+  color: var(--muted);
+}
+
+.pricing-features-soon li::before {
+  content: "\25CB";
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .premium-status-card {
   text-align: center;
 }
