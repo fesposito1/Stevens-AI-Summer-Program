@@ -104,6 +104,8 @@
           <button type="button" class="avatar-btn" id="avatar-btn" aria-haspopup="true" aria-expanded="false"></button>
           <div class="avatar-dropdown hidden" id="avatar-dropdown">
             <div class="avatar-dropdown-username" id="current-username"></div>
+            <button type="button" class="avatar-dropdown-item" id="account-menu-btn">&#9881;&#65039; Account Settings</button>
+            <button type="button" class="avatar-dropdown-item hidden" id="admin-menu-btn">&#128274; Admin</button>
             <button type="button" class="avatar-dropdown-item danger" id="logout-btn">Log Out</button>
           </div>
         </div>
@@ -112,10 +114,10 @@
 
     <main>
       <section id="tab-home" class="tab-panel active"></section>
-      <section id="tab-my-stats" class="tab-panel"></section>
-      <section id="tab-explore" class="tab-panel"></section>
+      <section id="tab-stats" class="tab-panel"></section>
+      <section id="tab-calendar" class="tab-panel"></section>
+      <section id="tab-leaderboard" class="tab-panel"></section>
       <section id="tab-coach" class="tab-panel"></section>
-      <section id="tab-premium" class="tab-panel"></section>
       <section id="tab-account" class="tab-panel"></section>
       <section id="tab-admin" class="tab-panel"></section>
     </main>
@@ -129,23 +131,17 @@
       <button type="button" class="tab-btn active" data-tab="home">
         <span class="tab-icon">&#127968;</span><span class="tab-label">Home</span>
       </button>
-      <button type="button" class="tab-btn" data-tab="my-stats">
-        <span class="tab-icon">&#128202;</span><span class="tab-label">My Stats</span>
+      <button type="button" class="tab-btn" data-tab="stats">
+        <span class="tab-icon">&#128202;</span><span class="tab-label">Stats</span>
       </button>
-      <button type="button" class="tab-btn" data-tab="explore">
-        <span class="tab-icon">&#128269;</span><span class="tab-label">Explore</span>
+      <button type="button" class="tab-btn" data-tab="calendar">
+        <span class="tab-icon">&#128197;</span><span class="tab-label">Calendar</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="leaderboard">
+        <span class="tab-icon">&#127942;</span><span class="tab-label">Leaderboard</span>
       </button>
       <button type="button" class="tab-btn" data-tab="coach">
         <span class="tab-icon">&#129302;</span><span class="tab-label">Coach</span>
-      </button>
-      <button type="button" class="tab-btn tab-btn-premium" data-tab="premium">
-        <span class="tab-icon">&#11088;</span><span class="tab-label">Premium</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="account">
-        <span class="tab-icon">&#9881;&#65039;</span><span class="tab-label">Account</span>
-      </button>
-      <button type="button" class="tab-btn hidden" id="admin-tab-btn" data-tab="admin">
-        <span class="tab-icon">&#128274;</span><span class="tab-label">Admin</span>
       </button>
     </nav>
   </div>

@@ -190,6 +190,41 @@ If the Coach ever errors with a `429 quota exceeded, limit: 0` message, the mode
 models get free quota. Swap it for whatever `gemini-*-latest` alias is current at
 [aistudio.google.com](https://aistudio.google.com).
 
+## Premium checkout setup (Stripe test mode)
+
+Upgrading to Premium goes through a real **Stripe Checkout** page — in **test mode**, so no real
+money moves. Only the person deploying/running the app needs a Stripe account; visitors just use
+Stripe's test card.
+
+**One-time setup (whoever runs the deployment):**
+
+1. Sign up free at [stripe.com](https://stripe.com) — test mode needs no business verification,
+   bank account, or identity check.
+2. In the Stripe Dashboard (make sure you're in **Test mode**, top right), go to
+   **Developers → API keys** and copy the **Secret key** (starts with `sk_test_...`).
+3. Set it as `STRIPE_SECRET_KEY`:
+   - **Render**: web service → **Environment** → add `STRIPE_SECRET_KEY`. `render.yaml` already
+     declares this (`sync: false`), so Render prompts for it on a fresh Blueprint deploy too.
+   - **Local dev**: environment variable, or save as plain text to
+     `%LOCALAPPDATA%\SportsStatsApp\stripe_secret_key.txt`.
+4. Set up the webhook so payments actually mark accounts Premium (this is what makes it real
+   instead of just redirecting and hoping):
+   - Dashboard → **Developers → Webhooks → Add endpoint**.
+   - Endpoint URL: `https://<your-app>/api/premium/webhook`.
+   - Events to send: `checkout.session.completed`, `customer.subscription.deleted`,
+     `customer.subscription.updated`.
+   - Copy the **Signing secret** (starts with `whsec_...`) and set it as `STRIPE_WEBHOOK_SECRET`
+     the same way as `STRIPE_SECRET_KEY` above.
+
+**Using it (anyone visiting the app):** click Upgrade to Premium on the Premium tab, get
+redirected to a real Stripe-hosted checkout page, and pay with a **test card** —
+`4242 4242 4242 4242`, any future expiry date, any 3-digit CVC, any ZIP. Stripe redirects back to
+the app and the webhook flips the account to Premium within a few seconds.
+
+Without `STRIPE_SECRET_KEY` configured, the Upgrade button shows a clear "Stripe isn't configured
+yet" message instead of erroring. Admins can also flip any user's Premium status manually from the
+Admin tab regardless of Stripe, for testing without going through checkout at all.
+
 ## Data & storage
 
 - **Local dev (`python app.py`):** user accounts and stat logs are stored in a local SQLite

@@ -96,6 +96,10 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_since TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_messages_date TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_messages_count INTEGER DEFAULT 0")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT DEFAULT 'light'")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS app_settings (
                     key TEXT PRIMARY KEY,
@@ -224,6 +228,10 @@ def init_db():
                 "ALTER TABLE users ADD COLUMN premium_since TEXT",
                 "ALTER TABLE users ADD COLUMN coach_messages_date TEXT",
                 "ALTER TABLE users ADD COLUMN coach_messages_count INTEGER DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT",
+                "ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT",
+                "ALTER TABLE users ADD COLUMN profile_photo TEXT",
+                "ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'light'",
                 "ALTER TABLE events ADD COLUMN event_time TEXT",
                 "ALTER TABLE events ADD COLUMN sport TEXT NOT NULL DEFAULT 'Soccer'",
             ):
@@ -301,12 +309,38 @@ def delete_user(user_id):
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
+def update_profile_photo(user_id, photo_data_uri):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET profile_photo = ? WHERE id = ?", (photo_data_uri, user_id))
+
+
+def update_theme(user_id, theme):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET theme = ? WHERE id = ?", (theme, user_id))
+
+
 def set_premium(user_id, is_premium, since=None):
     with get_conn() as conn:
         conn.execute(
             "UPDATE users SET is_premium = ?, premium_since = ? WHERE id = ?",
             (1 if is_premium else 0, since, user_id),
         )
+
+
+def set_stripe_ids(user_id, customer_id, subscription_id):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = ? WHERE id = ?",
+            (customer_id, subscription_id, user_id),
+        )
+
+
+def get_user_by_stripe_subscription(subscription_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE stripe_subscription_id = ?", (subscription_id,)
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def get_coach_usage(user_id):
