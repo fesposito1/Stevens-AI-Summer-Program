@@ -226,6 +226,12 @@ def parse_weight_kg(raw):
     return None
 
 
+def cm_to_inches(cm):
+    if cm is None:
+        return None
+    return round(cm / 2.54, 1)
+
+
 def cm_to_feet_inches(cm):
     if cm is None:
         return None
@@ -238,10 +244,17 @@ def cm_to_feet_inches(cm):
     return f"{feet}'{inches}\""
 
 
-def kg_to_lbs(kg):
+def kg_to_lbs_raw(kg):
     if kg is None:
         return None
-    return f"{round(kg * 2.20462, 1)} lbs"
+    return round(kg * 2.20462, 1)
+
+
+def kg_to_lbs(kg):
+    raw = kg_to_lbs_raw(kg)
+    if raw is None:
+        return None
+    return f"{raw} lbs"
 
 
 def calc_age(date_born):
@@ -1028,6 +1041,8 @@ def player_detail(player_id):
     if not info_list:
         return jsonify({"error": "Player not found"}), 404
     info = info_list[0]
+    height_cm = parse_height_cm(info.get("strHeight"))
+    weight_kg = parse_weight_kg(info.get("strWeight"))
 
     team_id = info.get("idTeam")
     team_events = {"last_events": None, "next_events": None}
@@ -1049,8 +1064,10 @@ def player_detail(player_id):
             "nationality": info.get("strNationality"),
             "born": info.get("dateBorn"),
             "status": info.get("strStatus"),
-            "height": cm_to_feet_inches(parse_height_cm(info.get("strHeight"))),
-            "weight": kg_to_lbs(parse_weight_kg(info.get("strWeight"))),
+            "height": cm_to_feet_inches(height_cm),
+            "weight": kg_to_lbs(weight_kg),
+            "height_in": cm_to_inches(height_cm),
+            "weight_lbs": kg_to_lbs_raw(weight_kg),
             "age": calc_age(info.get("dateBorn")),
             "description": info.get("strDescriptionEN"),
             "thumb": info.get("strThumb") or info.get("strCutout"),

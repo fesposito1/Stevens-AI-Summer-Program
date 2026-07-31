@@ -418,6 +418,13 @@ async function renderCompareDetail(container, item, data, onBack) {
     })
     .join("");
 
+  const bio = {
+    height_in: latest["Bio|height_in"],
+    weight_lbs: latest["Bio|weight_lbs"],
+    age: latest["Bio|age"],
+  };
+  const hasBio = info.height_in != null || info.weight_lbs != null || info.age != null;
+
   container.innerHTML = `
     ${backLinkHtml()}
     <div class="detail-header">
@@ -427,6 +434,24 @@ async function renderCompareDetail(container, item, data, onBack) {
         <div class="result-meta">${info.sport || ""}${info.team ? " · " + info.team : ""}</div>
       </div>
     </div>
+
+    ${hasBio ? `
+    <div class="category">
+      <h3>Compare Your Bio</h3>
+      <p class="empty-note">Real data from TheSportsDB — ${info.name}'s actual height/weight/age.</p>
+      <div class="compare-form">
+        <label>Height (in)<input type="number" step="any" id="cmp-bio-height" value="${bio.height_in ?? ""}" placeholder="e.g. 70" /></label>
+        <label>Weight (lbs)<input type="number" step="any" id="cmp-bio-weight" value="${bio.weight_lbs ?? ""}" placeholder="e.g. 170" /></label>
+        <label>Age (yrs)<input type="number" step="any" id="cmp-bio-age" value="${bio.age ?? ""}" placeholder="e.g. 25" /></label>
+      </div>
+      <div class="compare-form">
+        <button type="button" id="cmp-bio-btn">Compare</button>
+        <button type="button" id="cmp-bio-save-btn">Save as My Bio</button>
+      </div>
+      <div id="cmp-bio-save-msg" class="empty-note hidden"></div>
+      <div id="cmp-bio-result"></div>
+    </div>
+    ` : ""}
 
     <div class="category">
       <h3>${hasSkills ? `Compare Your ${mappedSport} Skills` : "Compare"}</h3>
@@ -452,6 +477,49 @@ async function renderCompareDetail(container, item, data, onBack) {
   `;
   container.classList.remove("hidden");
   document.getElementById("back-link").addEventListener("click", onBack);
+
+  if (hasBio) {
+    const runBioCompare = () => {
+      const you = {
+        height: parseFloat(document.getElementById("cmp-bio-height").value),
+        weight: parseFloat(document.getElementById("cmp-bio-weight").value),
+        age: parseFloat(document.getElementById("cmp-bio-age").value),
+      };
+      const rows = [
+        compareRow("Height", you.height, info.height_in, " in", info.name),
+        compareRow("Weight", you.weight, info.weight_lbs, " lbs", info.name),
+        compareRow("Age", you.age, info.age, " yrs", info.name),
+      ].join("");
+      document.getElementById("cmp-bio-result").innerHTML = rows;
+    };
+
+    document.getElementById("cmp-bio-btn").addEventListener("click", runBioCompare);
+
+    document.getElementById("cmp-bio-save-btn").addEventListener("click", async () => {
+      const entries = [
+        { sport: "Bio", metric_key: "height_in", value: document.getElementById("cmp-bio-height").value },
+        { sport: "Bio", metric_key: "weight_lbs", value: document.getElementById("cmp-bio-weight").value },
+        { sport: "Bio", metric_key: "age", value: document.getElementById("cmp-bio-age").value },
+      ].filter((e) => e.value !== "");
+
+      for (const entry of entries) {
+        await fetch("/api/stats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(entry),
+        });
+      }
+
+      const msg = document.getElementById("cmp-bio-save-msg");
+      msg.textContent = "Saved to Your Stats!";
+      msg.classList.remove("hidden");
+      setTimeout(() => msg.classList.add("hidden"), 2500);
+    });
+
+    if (bio.height_in !== undefined || bio.weight_lbs !== undefined || bio.age !== undefined) {
+      runBioCompare();
+    }
+  }
 
   if (!hasSkills) return;
 
